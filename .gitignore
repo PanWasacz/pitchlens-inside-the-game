@@ -1,0 +1,10 @@
+match/
+model/
+*.mp4
+*.pt
+*.onnx
+.env
+__pycache__/
+.venv/
+node_modules/
+dist/
