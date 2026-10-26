@@ -132,13 +132,32 @@ export class VideoCamera implements Camera {
   private k = 1;
   private ox = 0;
   private oy = 0;
+  private w = 1;
+  private h = 1;
+  /** Virtual zoom on top of the broadcast framing (3D view only): screen = p * zoom + t. */
+  zoom = 1;
+  private tx = 0;
+  private ty = 0;
 
   /** Video frame (vw x vh) letterboxed into the canvas, like object-fit: contain. */
   update(width: number, height: number, vw: number, vh: number, camera: Float64Array | null) {
+    this.w = width;
+    this.h = height;
     this.k = Math.min(width / vw, height / vh);
     this.ox = (width - vw * this.k) / 2;
     this.oy = (height - vh * this.k) / 2;
     if (camera) this.m = camera;
+  }
+
+  /** Zoom to `zoom` keeping the scene point under (mx, my) in place; 1x..4x. */
+  setZoom(mx: number, my: number, zoom: number) {
+    const z = Math.min(4, Math.max(1, zoom));
+    this.tx = mx - ((mx - this.tx) * z) / this.zoom;
+    this.ty = my - ((my - this.ty) * z) / this.zoom;
+    this.zoom = z;
+    // Keep the picture covering the screen; back at 1x the framing is the broadcast one.
+    this.tx = Math.min(0, Math.max(this.w * (1 - z), this.tx));
+    this.ty = Math.min(0, Math.max(this.h * (1 - z), this.ty));
   }
 
   project(x: number, y: number, z = 0): Projected {
@@ -175,14 +194,20 @@ export class VideoCamera implements Camera {
     const f = m[12];
     const u = f * xn * d + m[13];
     const v = f * yn * d + m[14];
-    return { x: this.ox + u * this.k, y: this.oy + v * this.k, scale: ((f * d) / zc) * this.k, depth: zc };
+    const zm = this.zoom;
+    return {
+      x: (this.ox + u * this.k) * zm + this.tx,
+      y: (this.oy + v * this.k) * zm + this.ty,
+      scale: ((f * d) / zc) * this.k * zm,
+      depth: zc,
+    };
   }
 
   unproject(sx: number, sy: number): [number, number] | null {
     const m = this.m;
     const f = m[12];
-    const xd = ((sx - this.ox) / this.k - m[13]) / f;
-    const yd = ((sy - this.oy) / this.k - m[14]) / f;
+    const xd = (((sx - this.tx) / this.zoom - this.ox) / this.k - m[13]) / f;
+    const yd = (((sy - this.ty) / this.zoom - this.oy) / this.k - m[14]) / f;
     // Undistort by fixed-point iteration.
     let xn = xd;
     let yn = yd;

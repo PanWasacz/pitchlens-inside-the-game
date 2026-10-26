@@ -50,6 +50,8 @@ class App {
   private readonly tv = new TvCamera();
   private readonly top = new TopCamera();
   private readonly vid = new VideoCamera();
+  /** Same calibrated camera for the 3D view, which may additionally zoom. */
+  private readonly recon = new VideoCamera();
   private readonly drawings = new Drawings();
   private readonly keyMoments: MatchEvent[];
   private readonly goals: MatchEvent[];
@@ -68,7 +70,7 @@ class App {
   private color = DRAW_COLORS[0];
   private drawing = false;
   private pointers = new Map<number, [number, number]>();
-  private pinch: { dist: number; span: number } | null = null;
+  private pinch: { dist: number; span: number; zoom: number; cx: number; cy: number } | null = null;
   private snapCamera = true;
   private lastNow = performance.now();
   private bannerTimer = 0;
@@ -301,7 +303,7 @@ class App {
   private currentCamera(now: number): Camera {
     const a = Math.min(1, (now - this.viewStart) / VIEW_ANIM_MS);
     // "recon" redraws the tracked match through the calibrated broadcast camera.
-    const cam = (v: View) => (v === "top" ? this.top : v === "recon" ? this.vid : this.mainCamera());
+    const cam = (v: View) => (v === "top" ? this.top : v === "recon" ? this.recon : this.mainCamera());
     return a < 1 ? new BlendCamera(cam(this.viewFrom), cam(this.view), ease(a)) : cam(this.view);
   }
 
@@ -325,7 +327,7 @@ class App {
 
   private setupPointer() {
     const c = this.canvas;
-    const local = (e: PointerEvent): [number, number] => {
+    const local = (e: MouseEvent): [number, number] => {
       const r = c.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
@@ -340,7 +342,10 @@ class App {
         // Second finger: pinch-zoom the TV camera instead of drawing.
         this.drawings.cancel();
         this.drawing = false;
-        if (!this.video && this.view === "main") this.pinch = { dist: pinchDist(), span: this.tv.span };
+        const [a, b] = [...this.pointers.values()];
+        if ((!this.video && this.view === "main") || this.view === "recon") {
+          this.pinch = { dist: pinchDist(), span: this.tv.span, zoom: this.recon.zoom, cx: (a[0] + b[0]) / 2, cy: (a[1] + b[1]) / 2 };
+        }
         return;
       }
       if (this.pointers.size > 2) return;
@@ -363,7 +368,9 @@ class App {
       const [x, y] = local(e);
       if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, [x, y]);
       if (this.pinch && this.pointers.size === 2) {
-        this.tv.span = Math.min(110, Math.max(24, (this.pinch.span * this.pinch.dist) / Math.max(pinchDist(), 1)));
+        const ratio = Math.max(pinchDist(), 1) / this.pinch.dist;
+        if (this.view === "recon") this.recon.setZoom(this.pinch.cx, this.pinch.cy, this.pinch.zoom * ratio);
+        else this.tv.span = Math.min(110, Math.max(24, this.pinch.span / ratio));
         return;
       }
       if (!this.drawing) return;
@@ -378,6 +385,12 @@ class App {
       this.drawings.end();
     };
     c.onwheel = (e) => {
+      if (this.view === "recon") {
+        e.preventDefault();
+        const [x, y] = local(e);
+        this.recon.setZoom(x, y, this.recon.zoom * Math.exp(-e.deltaY * 0.0015));
+        return;
+      }
       if (this.video || this.view !== "main") return;
       e.preventDefault();
       this.tv.span = Math.min(110, Math.max(24, this.tv.span * Math.exp(e.deltaY * 0.001)));
@@ -472,6 +485,7 @@ class App {
 
     if (this.video && meta.video) {
       this.vid.update(w, h, meta.video.width, meta.video.height, s.camera);
+      this.recon.update(w, h, meta.video.width, meta.video.height, s.camera);
     } else {
       const bx = s.ball.visible ? s.ball.x : L / 2;
       const by = s.ball.visible ? s.ball.y : W / 2;
@@ -545,7 +559,7 @@ class App {
     }
     // Area the main camera sees.
     if (this.view !== "top") {
-      const cam = this.mainCamera();
+      const cam = this.view === "recon" ? this.recon : this.mainCamera();
       const border: Pt[] = [];
       const n = 12;
       for (let i = 0; i <= n; i++) border.push([(this.w * i) / n, 0]);
