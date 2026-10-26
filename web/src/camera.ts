@@ -17,6 +17,8 @@ export interface Projected {
 
 export interface Camera {
   project(x: number, y: number, z?: number): Projected;
+  /** Like project, but continuous for points outside the picture (used while animating views). */
+  projectLoose?(x: number, y: number, z?: number): Projected;
   /** Canvas pixel -> point on the grass, or null if the ray misses the ground. */
   unproject(sx: number, sy: number): [number, number] | null;
   /** True when height can be shown (3D cameras). */
@@ -140,20 +142,35 @@ export class VideoCamera implements Camera {
   }
 
   project(x: number, y: number, z = 0): Projected {
+    return this.projectWith(x, y, z, false);
+  }
+
+  projectLoose(x: number, y: number, z = 0): Projected {
+    return this.projectWith(x, y, z, true);
+  }
+
+  private projectWith(x: number, y: number, z: number, loose: boolean): Projected {
     const m = this.m;
     const dx = x - m[9];
     const dy = -y - m[10];
     const dz = z - m[11];
     const xc = m[0] * dx + m[1] * dy + m[2] * dz;
     const yc = m[3] * dx + m[4] * dy + m[5] * dz;
-    const zc = m[6] * dx + m[7] * dy + m[8] * dz;
-    if (zc < 0.5) return HIDDEN;
+    let zc = m[6] * dx + m[7] * dy + m[8] * dz;
+    if (zc < 0.5) {
+      if (!loose) return HIDDEN;
+      zc = 0.5;
+    }
     const xn = xc / zc;
     const yn = yc / zc;
-    const r2 = xn * xn + yn * yn;
+    let r2 = xn * xn + yn * yn;
     const k1 = m[15];
     // Beyond this radius the distortion polynomial folds back into the picture.
-    if (k1 && r2 > 0.9 / (3 * Math.abs(k1))) return HIDDEN;
+    const limit = k1 ? 0.9 / (3 * Math.abs(k1)) : Infinity;
+    if (r2 > limit) {
+      if (!loose) return HIDDEN;
+      r2 = limit;
+    }
     const d = 1 + k1 * r2;
     const f = m[12];
     const u = f * xn * d + m[13];
@@ -193,8 +210,8 @@ export class BlendCamera implements Camera {
   }
 
   project(x: number, y: number, z = 0): Projected {
-    const p = this.from.project(x, y, z);
-    const q = this.to.project(x, y, z);
+    const p = this.from.projectLoose ? this.from.projectLoose(x, y, z) : this.from.project(x, y, z);
+    const q = this.to.projectLoose ? this.to.projectLoose(x, y, z) : this.to.project(x, y, z);
     if (p.scale <= 0) return q;
     if (q.scale <= 0) return p;
     const a = this.a;

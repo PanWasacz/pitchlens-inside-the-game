@@ -133,12 +133,11 @@ function drawGoals(ctx: CanvasRenderingContext2D, cam: Camera) {
     for (const [lines, style] of [[net, "rgba(255,255,255,0.35)"], [posts, "#ffffff"]] as const) {
       ctx.strokeStyle = style;
       for (const line of lines) {
+        // Off-screen goals project as hidden points; never connect to them.
+        const pts = line.map(([x, y, z]) => cam.project(x, y, cam.hasHeight ? z : 0));
+        if (pts.some((p) => p.scale <= 0)) continue;
         ctx.beginPath();
-        line.forEach(([x, y, z], i) => {
-          const p = cam.project(x, y, cam.hasHeight ? z : 0);
-          if (i) ctx.lineTo(p.x, p.y);
-          else ctx.moveTo(p.x, p.y);
-        });
+        pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
         ctx.stroke();
       }
     }

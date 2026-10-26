@@ -60,6 +60,8 @@ export interface Snapshot {
   visible: Uint8Array;
   ball: { x: number; y: number; z: number; visible: boolean };
   possession: TeamKey | null;
+  /** Team defending its goal right now (opposite of possession; ball half for CV data). */
+  defending: TeamKey | null;
   /** Video camera (CV only): R (9, row-major), C (3), f, cx, cy, k1 in the world frame (x, -y, z). */
   camera: Float64Array | null;
 }
@@ -89,6 +91,8 @@ export class Match {
   private readonly poss: Int8Array;
   private readonly cam: Float64Array | null;
   private readonly camPresent: Uint8Array;
+  private readonly dirs: Record<TeamKey, 1 | -1>;
+  private readonly def: Int8Array;
   private readonly snap: Snapshot;
 
   constructor(readonly meta: Meta, readonly events: MatchEvent[], lines: string[]) {
@@ -148,6 +152,9 @@ export class Match {
       }
     });
 
+    this.dirs = this.attackDirections();
+    this.def = this.defendingPerFrame();
+
     this.snap = {
       t: 0,
       x: new Float32Array(P),
@@ -157,6 +164,7 @@ export class Match {
       visible: new Uint8Array(P),
       ball: { x: 0, y: 0, z: 0, visible: false },
       possession: null,
+      defending: null,
       camera: this.cam ? new Float64Array(CAM) : null,
     };
   }
@@ -204,6 +212,8 @@ export class Match {
     s.ball.visible = Boolean(b0 || b1);
     const pv = this.poss[a < 0.5 ? f0 : f1];
     s.possession = pv < 0 ? null : pv === 0 ? "home" : "away";
+    const dv = this.def[a < 0.5 ? f0 : f1];
+    s.defending = dv < 0 ? null : dv === 0 ? "home" : "away";
     if (this.cam && s.camera) {
       const c0 = this.camPresent[f0] ? f0 : f1;
       const c1 = this.camPresent[f1] ? f1 : f0;
@@ -230,21 +240,63 @@ export class Match {
     return out;
   }
 
-  /** Which way a team attacks; inferred from its goalkeeper for CV data. */
-  attackDir(team: TeamKey, s: Snapshot): 1 | -1 {
-    const declared = this.meta.teams[team].attacks;
-    if (declared) return declared === "+x" ? 1 : -1;
-    const gk = this.players.find((p) => p.team === team && p.isGK && s.visible[p.index]);
-    if (gk) return s.x[gk.index] < this.meta.pitch.length / 2 ? 1 : -1;
-    let sum = 0;
-    let n = 0;
-    for (const p of this.players) {
-      if (p.team === team && s.visible[p.index]) {
-        sum += s.x[p.index];
-        n++;
+  /** Which way a team attacks (+1 towards x = 105). Fixed for the whole clip. */
+  attackDir(team: TeamKey): 1 | -1 {
+    return this.dirs[team];
+  }
+
+  /**
+   * Attack directions: declared for synthetic data; for CV data from where each
+   * goalkeeper stands over the whole clip (teams do not swap ends within a clip).
+   * A momentary guess per frame flips when a team pushes into the other half.
+   */
+  private attackDirections(): Record<TeamKey, 1 | -1> {
+    const half = this.meta.pitch.length / 2;
+    const guess: Partial<Record<TeamKey, 1 | -1>> = {};
+    for (const team of ["home", "away"] as TeamKey[]) {
+      const declared = this.meta.teams[team].attacks;
+      if (declared) {
+        guess[team] = declared === "+x" ? 1 : -1;
+        continue;
+      }
+      const xs: number[] = [];
+      for (const p of this.players) {
+        if (p.team !== team || !p.isGK) continue;
+        for (let f = 0; f < this.frames; f++) if (this.present[f * this.P + p.index]) xs.push(this.px[f * this.P + p.index]);
+      }
+      if (xs.length) {
+        xs.sort((a, b) => a - b);
+        guess[team] = xs[xs.length >> 1] < half ? 1 : -1;
       }
     }
-    return n && sum / n < this.meta.pitch.length / 2 ? 1 : -1;
+    const home = guess.home ?? (guess.away ? (-guess.away as 1 | -1) : 1);
+    return { home, away: guess.away ?? (-home as 1 | -1) };
+  }
+
+  /**
+   * Defending team per frame. With possession data it is simply the other team.
+   * CV data has no possession, so the team whose half the ball is in defends, with a
+   * 4 m hysteresis around halfway and the last known ball position when it is not
+   * detected, so the line does not flicker between teams.
+   */
+  private defendingPerFrame(): Int8Array {
+    const def = new Int8Array(this.frames).fill(-1);
+    const half = this.meta.pitch.length / 2;
+    const leftDefender = this.dirs.home === 1 ? 0 : 1; // team whose goal is at x = 0
+    let state = -1;
+    let ballX = half;
+    for (let f = 0; f < this.frames; f++) {
+      if (this.poss[f] >= 0) {
+        state = 1 - this.poss[f];
+      } else if (this.meta.source === "cv") {
+        if (this.bPresent[f]) ballX = this.bx[f];
+        if (ballX < half - 4) state = leftDefender;
+        else if (ballX > half + 4) state = 1 - leftDefender;
+        else if (state < 0) state = ballX < half ? leftDefender : 1 - leftDefender;
+      }
+      def[f] = state;
+    }
+    return def;
   }
 }
 
@@ -258,7 +310,7 @@ export interface Dataset {
 export const DATASETS: Dataset[] = [
   { key: "demo", label: "Synthetic match", base: "data/demo/" },
   // Served by the dev server from the git-ignored match/ folder only.
-  { key: "cv", label: "Broadcast video (local)", base: "/local/out/cv_demo/", video: "/local/sample_match.mp4" },
+  { key: "cv", label: "Real match (sample)", base: "/local/out/cv_demo/", video: "/local/sample_match.mp4" },
 ];
 
 export async function datasetAvailable(ds: Dataset): Promise<boolean> {

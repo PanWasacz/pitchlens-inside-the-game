@@ -16,7 +16,7 @@ export function formationLines(match: Match, s: Snapshot, team: TeamKey): Player
     return (["DF", "MF", "FW"] as const).map((r) => outfield.filter((p) => p.role === r));
   }
   // No roles (CV tracks): 1-D k-means (k = 3) on depth along the attacking direction.
-  const dir = match.attackDir(team, s);
+  const dir = match.attackDir(team);
   const depth = outfield.map((p) => s.x[p.index] * dir);
   const sorted = [...depth].sort((a, b) => a - b);
   let centers = [0.15, 0.5, 0.85].map((q) => sorted[Math.floor(q * (sorted.length - 1))]);
@@ -74,25 +74,19 @@ export interface OffsideLine {
 }
 
 export function offsideLine(match: Match, s: Snapshot): OffsideLine | null {
-  let defending: TeamKey;
-  if (s.possession) {
-    defending = s.possession === "home" ? "away" : "home";
-  } else {
-    // No possession data (CV): the team defending the half the ball is in.
-    const ballX = s.ball.visible ? s.ball.x : L / 2;
-    const homeGoalSide = match.attackDir("home", s) === 1 ? -1 : 1;
-    const ballSide = ballX < L / 2 ? -1 : 1;
-    defending = homeGoalSide === ballSide ? "home" : "away";
-  }
-  const goalSide = (match.attackDir(defending, s) === 1 ? -1 : 1) as 1 | -1;
-  const depth = match.players
-    .filter((p) => p.team === defending && s.visible[p.index])
-    .map((p) => s.x[p.index] * goalSide)
-    .sort((a, b) => b - a);
-  if (depth.length < 2) return null;
+  const defending = s.defending;
+  if (!defending) return null;
+  const goalSide = (match.attackDir(defending) === 1 ? -1 : 1) as 1 | -1;
+  const visible = match.players.filter((p) => p.team === defending && s.visible[p.index]);
+  const depth = visible.map((p) => s.x[p.index] * goalSide).sort((a, b) => b - a);
+  // The keeper normally is the last defender. When the camera does not show them
+  // (CV data), the deepest visible defender already is the second-last one.
+  const keeperSeen = visible.some((p) => p.isGK);
+  const secondLast = keeperSeen || match.meta.source !== "cv" ? depth[1] : depth[0];
+  if (secondLast === undefined) return null;
   // An attacker is offside when nearer the goal line than both the second-last
   // defender and the ball, and inside the opponents' half.
-  let line = depth[1];
+  let line = secondLast;
   if (s.ball.visible) line = Math.max(line, s.ball.x * goalSide);
   line = Math.max(line, (L / 2) * goalSide);
   const x = line * goalSide;
