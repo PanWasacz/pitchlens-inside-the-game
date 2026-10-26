@@ -1,0 +1,198 @@
+{
+  "source": "synthetic",
+  "generator": "pitchlens_synth 0.1.0",
+  "seed": 12,
+  "pitch": {
+    "length": 105.0,
+    "width": 68.0
+  },
+  "fps": 10,
+  "duration": 600.0,
+  "frame_count": 6001,
+  "teams": {
+    "home": {
+      "name": "Northbridge Rovers",
+      "short": "NBR",
+      "formation": "4-3-3",
+      "colors": {
+        "primary": "#E63946",
+        "secondary": "#FFFFFF",
+        "goalkeeper": "#FFD23F"
+      },
+      "attacks": "+x",
+      "players": [
+        {
+          "id": "H01",
+          "number": 1,
+          "name": "E. Marrowby",
+          "position": "GK",
+          "role": "GK"
+        },
+        {
+          "id": "H03",
+          "number": 3,
+          "name": "L. Quennell",
+          "position": "LB",
+          "role": "DF"
+        },
+        {
+          "id": "H05",
+          "number": 5,
+          "name": "D. Okonjo",
+          "position": "LCB",
+          "role": "DF"
+        },
+        {
+          "id": "H06",
+          "number": 6,
+          "name": "S. Haverlund",
+          "position": "RCB",
+          "role": "DF"
+        },
+        {
+          "id": "H02",
+          "number": 2,
+          "name": "T. Brisco",
+          "position": "RB",
+          "role": "DF"
+        },
+        {
+          "id": "H08",
+          "number": 8,
+          "name": "J. Vantreight",
+          "position": "LCM",
+          "role": "MF"
+        },
+        {
+          "id": "H04",
+          "number": 4,
+          "name": "M. Adeyinka",
+          "position": "DM",
+          "role": "MF"
+        },
+        {
+          "id": "H10",
+          "number": 10,
+          "name": "R. Calloway-Fenn",
+          "position": "RCM",
+          "role": "MF"
+        },
+        {
+          "id": "H11",
+          "number": 11,
+          "name": "K. Ostrander",
+          "position": "LW",
+          "role": "FW"
+        },
+        {
+          "id": "H09",
+          "number": 9,
+          "name": "N. Pellegrue",
+          "position": "ST",
+          "role": "FW"
+        },
+        {
+          "id": "H07",
+          "number": 7,
+          "name": "A. Duquaine",
+          "position": "RW",
+          "role": "FW"
+        }
+      ]
+    },
+    "away": {
+      "name": "Kestrel Bay Athletic",
+      "short": "KBA",
+      "formation": "4-4-2",
+      "colors": {
+        "primary": "#3FA7F5",
+        "secondary": "#0B1D3A",
+        "goalkeeper": "#8BE36B"
+      },
+      "attacks": "-x",
+      "players": [
+        {
+          "id": "A01",
+          "number": 1,
+          "name": "P. Sandvik-Orr",
+          "position": "GK",
+          "role": "GK"
+        },
+        {
+          "id": "A03",
+          "number": 3,
+          "name": "G. Thornquist",
+          "position": "LB",
+          "role": "DF"
+        },
+        {
+          "id": "A04",
+          "number": 4,
+          "name": "B. Mwangale",
+          "position": "LCB",
+          "role": "DF"
+        },
+        {
+          "id": "A05",
+          "number": 5,
+          "name": "C. Delacroix-Hume",
+          "position": "RCB",
+          "role": "DF"
+        },
+        {
+          "id": "A02",
+          "number": 2,
+          "name": "F. Ilveston",
+          "position": "RB",
+          "role": "DF"
+        },
+        {
+          "id": "A11",
+          "number": 11,
+          "name": "Y. Barrowclough",
+          "position": "LM",
+          "role": "MF"
+        },
+        {
+          "id": "A06",
+          "number": 6,
+          "name": "H. Nakashiro",
+          "position": "LCM",
+          "role": "MF"
+        },
+        {
+          "id": "A08",
+          "number": 8,
+          "name": "W. Esterhuy",
+          "position": "RCM",
+          "role": "MF"
+        },
+        {
+          "id": "A07",
+          "number": 7,
+          "name": "O. Rennick",
+          "position": "RM",
+          "role": "MF"
+        },
+        {
+          "id": "A09",
+          "number": 9,
+          "name": "I. Kovalenko-Bray",
+          "position": "LS",
+          "role": "FW"
+        },
+        {
+          "id": "A10",
+          "number": 10,
+          "name": "Z. Amberleigh",
+          "position": "RS",
+          "role": "FW"
+        }
+      ]
+    }
+  },
+  "final_score": {
+    "home": 1,
+    "away": 3
+  }
+}

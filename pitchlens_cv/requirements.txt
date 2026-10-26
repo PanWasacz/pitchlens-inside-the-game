@@ -1,0 +1,7 @@
+numpy>=1.26
+opencv-python>=4.9
+ultralytics>=8.3
+supervision>=0.25
+scikit-learn>=1.4
+gdown>=5.0
+git+https://github.com/roboflow/sports.git
