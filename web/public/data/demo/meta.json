@@ -1,7 +1,7 @@
 {
   "source": "synthetic",
   "generator": "pitchlens_synth 0.1.0",
-  "seed": 12,
+  "seed": 20,
   "pitch": {
     "length": 105.0,
     "width": 68.0
@@ -192,7 +192,21 @@
     }
   },
   "final_score": {
-    "home": 1,
-    "away": 3
-  }
+    "home": 2,
+    "away": 2
+  },
+  "officials": [
+    {
+      "id": "REF",
+      "role": "referee"
+    },
+    {
+      "id": "AR1",
+      "role": "assistant"
+    },
+    {
+      "id": "AR2",
+      "role": "assistant"
+    }
+  ]
 }

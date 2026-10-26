@@ -29,6 +29,7 @@ export interface Meta {
   frame_count: number;
   teams: Record<TeamKey, TeamMeta>;
   video?: { file: string; width: number; height: number };
+  officials?: { id: string; role: string }[];
 }
 
 export interface MatchEvent {
@@ -60,6 +61,8 @@ export interface Snapshot {
   visible: Uint8Array;
   ball: { x: number; y: number; z: number; visible: boolean };
   possession: TeamKey | null;
+  /** Match officials (referee, assistants), same indexing as Match.officials. */
+  officials: { x: Float32Array; y: Float32Array; visible: Uint8Array };
   /** Team defending its goal right now (opposite of possession; ball half for CV data). */
   defending: TeamKey | null;
   /** Video camera (CV only): R (9, row-major), C (3), f, cx, cy, k1 in the world frame (x, -y, z). */
@@ -71,11 +74,13 @@ interface FrameJson {
   possession: TeamKey | null;
   ball: { x: number; y: number; z: number; owner: string | null } | null;
   players: { id: string; x: number; y: number; speed: number; dist: number }[];
+  officials?: { id: string; role: string; x: number; y: number }[];
   camera?: { R: number[]; C: number[]; f: number; cx: number; cy: number; k1: number } | null;
 }
 
 export class Match {
   readonly players: Player[];
+  readonly officials: { id: string; role: string }[];
   readonly frames: number;
   readonly duration: number;
   private readonly P: number;
@@ -91,6 +96,9 @@ export class Match {
   private readonly poss: Int8Array;
   private readonly cam: Float64Array | null;
   private readonly camPresent: Uint8Array;
+  private readonly ox: Float32Array;
+  private readonly oy: Float32Array;
+  private readonly oPresent: Uint8Array;
   private readonly dirs: Record<TeamKey, 1 | -1>;
   private readonly def: Int8Array;
   private readonly snap: Snapshot;
@@ -109,6 +117,9 @@ export class Match {
       }
     }
     const byId = new Map(this.players.map((p) => [p.id, p.index]));
+    this.officials = meta.officials ?? [];
+    const officialById = new Map(this.officials.map((o, i) => [o.id, i]));
+    const O = this.officials.length;
     const n = lines.length;
     const P = (this.P = this.players.length);
     this.frames = n;
@@ -125,6 +136,9 @@ export class Match {
     this.poss = new Int8Array(n).fill(-1);
     this.cam = meta.source === "cv" ? new Float64Array(n * CAM) : null;
     this.camPresent = new Uint8Array(n);
+    this.ox = new Float32Array(n * O);
+    this.oy = new Float32Array(n * O);
+    this.oPresent = new Uint8Array(n * O);
 
     lines.forEach((line, f) => {
       const fr = JSON.parse(line) as FrameJson;
@@ -145,6 +159,13 @@ export class Match {
         this.bPresent[f] = 1;
       }
       if (fr.possession) this.poss[f] = fr.possession === "home" ? 0 : 1;
+      for (const o of fr.officials ?? []) {
+        const i = officialById.get(o.id);
+        if (i === undefined) continue;
+        this.ox[f * O + i] = o.x;
+        this.oy[f * O + i] = o.y;
+        this.oPresent[f * O + i] = 1;
+      }
       if (this.cam && fr.camera) {
         const c = fr.camera;
         this.cam.set([...c.R, ...c.C, c.f, c.cx, c.cy, c.k1], f * CAM);
@@ -164,6 +185,7 @@ export class Match {
       visible: new Uint8Array(P),
       ball: { x: 0, y: 0, z: 0, visible: false },
       possession: null,
+      officials: { x: new Float32Array(O), y: new Float32Array(O), visible: new Uint8Array(O) },
       defending: null,
       camera: this.cam ? new Float64Array(CAM) : null,
     };
@@ -212,6 +234,16 @@ export class Match {
     s.ball.visible = Boolean(b0 || b1);
     const pv = this.poss[a < 0.5 ? f0 : f1];
     s.possession = pv < 0 ? null : pv === 0 ? "home" : "away";
+    const O = this.officials.length;
+    for (let i = 0; i < O; i++) {
+      const p0 = this.oPresent[f0 * O + i];
+      const p1 = this.oPresent[f1 * O + i];
+      const g0 = p0 ? f0 : f1;
+      const g1 = p1 ? f1 : f0;
+      s.officials.x[i] = this.ox[g0 * O + i] + (this.ox[g1 * O + i] - this.ox[g0 * O + i]) * a;
+      s.officials.y[i] = this.oy[g0 * O + i] + (this.oy[g1 * O + i] - this.oy[g0 * O + i]) * a;
+      s.officials.visible[i] = p0 || p1 ? 1 : 0;
+    }
     const dv = this.def[a < 0.5 ? f0 : f1];
     s.defending = dv < 0 ? null : dv === 0 ? "home" : "away";
     if (this.cam && s.camera) {

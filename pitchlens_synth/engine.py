@@ -115,6 +115,14 @@ class MatchSim:
         self.V = np.zeros((self.n, 2))
         self.dist = np.zeros(self.n)
         self.tackle_ready = np.zeros(self.n)  # time from which a player may tackle again
+        self.run_until = np.zeros(self.n)  # forwards making a (possibly mistimed) run behind the line
+        self.celebration: dict | None = None
+
+        # Match officials: referee, assistant on the near touchline (left half), far (right half).
+        self.off_ids = ("REF", "AR1", "AR2")
+        self.off_roles = ("referee", "assistant", "assistant")
+        self.off_P = np.array([[L / 2, W / 2 + 8], [L / 4, W + 1.2], [3 * L / 4, -1.2]])
+        self.off_V = np.zeros((3, 2))
 
         self.ball = np.array([L / 2, W / 2])
         self.ball_z = 0.0
@@ -192,8 +200,8 @@ class MatchSim:
                 line, span, width, shift, fb, w = 0.10, 0.33, 0.85, 0.0, 0.0, 0.0
             else:
                 # Blend the attacking and defending shapes so transitions are gradual.
-                attack = np.array([np.clip(0.08 + 0.48 * bu, 0.12, 0.56), 0.44, 1.0, 0.12, 0.16])
-                defend = np.array([np.clip(0.02 + 0.40 * bu, 0.05, 0.42), 0.30, 0.62, 0.30, 0.0])
+                attack = np.array([np.clip(0.10 + 0.48 * bu, 0.14, 0.58), 0.38, 0.88, 0.16, 0.14])
+                defend = np.array([np.clip(0.04 + 0.40 * bu, 0.06, 0.44), 0.25, 0.52, 0.34, 0.0])
                 line, span, width, shift, fb = w * attack + (1 - w) * defend
             noise = self.noise_amp[sl] * np.sin(self.noise_freq[sl] * self.t + self.noise_phase[sl])
             u = line + self.depth[sl] * span + fb * self.fullback[sl] + noise[:, 0]
@@ -202,7 +210,10 @@ class MatchSim:
             if kickoff:
                 u = np.minimum(u, 0.47)
             elif self.poss == k:
-                u = np.minimum(u, self._offside_u(k) - self.line_gap[sl])
+                off = self._offside_u(k)
+                # Forwards hold the line, except during a run that starts a touch too early.
+                running = self.run_until[sl] > self.t
+                u = np.where(running, np.maximum(u, off + 0.025), np.minimum(u, off - self.line_gap[sl]))
             u[0] = 0.012 + 0.09 * np.clip(bu, 0, 1)
             v[0] = 0.5 + (bv - 0.5) * 0.3
             T[sl] = self._to_field(k, np.clip(u, 0.01, 0.985), np.clip(v, 0.03, 0.97))
@@ -229,6 +240,16 @@ class MatchSim:
 
         if self.restart is not None:
             r = self.restart
+            cel = self.celebration
+            if cel is not None and self.t < cel["until"]:
+                # Scorer runs to the corner flag, teammates chase the scorer there.
+                s_ = cel["scorer"]
+                T[s_] = cel["corner"]
+                vcap[s_] = self.vmax[s_] * 0.8
+                for n_, j in enumerate(cel["mates"]):
+                    ang = n_ * 2.4
+                    T[j] = self.P[s_] + np.array([math.cos(ang), math.sin(ang)]) * 1.6
+                    vcap[j] = 6.5
             if r.taker >= 0:
                 back = _unit(self._attack_goal(r.team) - r.spot)
                 T[r.taker] = r.spot - back * 0.5
@@ -244,6 +265,20 @@ class MatchSim:
             vcap[near[0]] = self.vmax[near[0]] * 0.7
             T[near[1]] = self.ball + _unit(own_goal - self.ball) * 7.0
             vcap[near[1]] = self.vmax[near[1]] * 0.55
+            # A third defender closes the nearest passing lane.
+            T[near[2]] = self.ball + _unit(own_goal - self.ball) * 4.0 + _unit(self.P[near[2]] - self.ball) * 4.0
+            vcap[near[2]] = self.vmax[near[2]] * 0.6
+            if not self.is_gk[o]:
+                # Two teammates come short to offer an angle, ahead of the ball on either side.
+                fwd = _unit(self._attack_goal(1 - k) - self.ball)
+                mates = [j for j in self._nearest(self._team_idx(1 - k), self.ball) if j != o][:2]
+                for j, ang in zip(mates, (0.95, -0.95)):
+                    if _norm(self.P[j] - self.ball) > 28:
+                        continue
+                    c, sn = math.cos(ang), math.sin(ang)
+                    offer = self.ball + np.array([fwd[0] * c - fwd[1] * sn, fwd[0] * sn + fwd[1] * c]) * 11.0
+                    T[j] = _clip_to_pitch(offer, margin=2.0)
+                    vcap[j] = self.vmax[j] * 0.7
         elif self.flight is not None:
             f = self.flight
             if f.claimant >= 0:
@@ -356,8 +391,40 @@ class MatchSim:
         self.shape_ref += (self._ball_ref() - self.shape_ref) * min(1.0, DT / 1.5)
         in_poss = np.array([self.poss == 0, self.poss == 1], dtype=float)
         self.poss_w += (in_poss - self.poss_w) * min(1.0, DT / 2.5)
+        self._start_runs()
         self._move(*self._targets())
         self._update_ball()
+        self._move_officials()
+
+    def _start_runs(self) -> None:
+        """Forwards in the final third now and then set off behind the line, sometimes early."""
+        if self.poss is None or self.owner < 0 or self.restart is not None:
+            return
+        k = self.poss
+        for j in self._team_idx(k):
+            if self.role[j] != "FW" or self.run_until[j] > self.t or j == self.owner:
+                continue
+            uj, _ = self._to_team(k, self.P[j])
+            if uj > 0.6 and self.rng.random() < DT / 10.0:
+                self.run_until[j] = self.t + self.rng.uniform(1.2, 2.4)
+
+    def _move_officials(self) -> None:
+        """Referee keeps a diagonal off the play; assistants follow the offside line in their half."""
+        ref = self.shape_ref
+        side = 1.0 if ref[1] < W / 2 else -1.0
+        targets = np.empty((3, 2))
+        targets[0] = _clip_to_pitch(ref + np.array([-6.0, 12.0 * side]), margin=3.0)
+        home_x = np.sort(self.P[self._team_idx(0), 0])  # home defends x = 0
+        away_x = np.sort(self.P[self._team_idx(1), 0])[::-1]
+        targets[1] = [np.clip(min(home_x[1], self.ball[0]), 0.0, L / 2), W + 1.2]
+        targets[2] = [np.clip(max(away_x[1], self.ball[0]), L / 2, L), -1.2]
+        delta = targets - self.off_P
+        d = np.linalg.norm(delta, axis=1)
+        desired = delta * (np.minimum(7.0, 1.2 * d) / np.maximum(d, 1e-6))[:, None]
+        dv = desired - self.off_V
+        m = np.linalg.norm(dv, axis=1)
+        self.off_V += dv * np.minimum(1.0, ACCEL * DT / np.maximum(m, 1e-9))[:, None]
+        self.off_P += self.off_V * DT
 
     def _tackles(self) -> None:
         o = self.owner
@@ -382,7 +449,7 @@ class MatchSim:
         k = self.team_of[o]
         dg = _norm(self._attack_goal(k) - self.P[o])
         if not self.is_gk[o]:
-            p_shot = 0.45 if dg < 17 else 0.2 if dg < 24 else 0.03 if dg < 32 else 0.0
+            p_shot = 0.5 if dg < 17 else 0.3 if dg < 24 else 0.09 if dg < 32 else 0.0
             if self.rng.random() < p_shot:
                 self._shoot()
                 return
@@ -420,6 +487,7 @@ class MatchSim:
                 pu, _ = self._to_team(k, pt)
                 score = (0.07 * (pu - cu) * L + 0.35 * min(lane, 5.0)
                          - 0.03 * max(d - 25, 0) + (0.6 if through else 0.0)
+                         + (0.9 if through and self.run_until[j] > self.t else 0.0)
                          - (1.0 if self.is_gk[j] else 0.0) - (1.5 if lane < 1.0 else 0.0))
                 options.append((score, j, pt, through, lane, d))
         return options
@@ -455,9 +523,15 @@ class MatchSim:
                 duration *= s
                 claimant = q
 
+        # Offside is judged when the ball is played: receiver beyond the second-last
+        # defender and the ball, in the opponents' half.
+        uj, _ = self._to_team(k, self.P[j])
+        offside = bool(uj > self._offside_u(k) + 0.003)
         ev = self._event("pass", o, start, end_x=round(float(end[0]), 2),
                          end_y=round(float(end[1]), 2), receiver=self.ids[j],
                          through_ball=bool(through), lofted=bool(lofted), outcome=None)
+        if offside:
+            ev["_offside_at"] = self.P[j].copy()
         self.pending_pass = ev
         self.flight = Flight("pass", start, end, self.t, max(duration, 0.1), height,
                              team=k, claimant=claimant, event=ev)
@@ -525,7 +599,12 @@ class MatchSim:
                 self._event("goal", None, self.ball, team=TEAM_KEYS[k],
                             scorer=f.event["player"], assist=f.event["assist"],
                             score={"home": self.score[0], "away": self.score[1]})
-                self._start_restart("kickoff", 1 - k, (L / 2, W / 2), delay=7.0)
+                scorer = self.ids.index(f.event["player"])
+                corner = np.array([L - 1.0 if k == 0 else 1.0, 1.0 if self.P[scorer][1] < W / 2 else W - 1.0])
+                mates = [j for j in self._nearest(self._team_idx(k), self.P[scorer])
+                         if j != scorer and _norm(self.P[j] - self.P[scorer]) < 35][:5]
+                self.celebration = {"scorer": scorer, "corner": corner, "mates": mates, "until": self.t + 5.0}
+                self._start_restart("kickoff", 1 - k, (L / 2, W / 2), delay=10.0)
             elif f.outcome == "saved":
                 self._event("save", f.claimant, self.ball, shooter=f.event["player"])
                 self._claim(f.claimant)
@@ -549,6 +628,14 @@ class MatchSim:
         k = int(self.team_of[i])
         if self.pending_pass is not None:
             ev = self.pending_pass
+            if ev["team"] == TEAM_KEYS[k] and "_offside_at" in ev:
+                spot = ev.pop("_offside_at")
+                ev["outcome"] = "offside"
+                self.pending_pass = None
+                self._event("offside", i, spot, passer=ev["player"])
+                self._start_restart("free_kick", 1 - k, _clip_to_pitch(spot, 1.0), delay=3.0)
+                return
+            ev.pop("_offside_at", None)
             if ev["team"] == TEAM_KEYS[k]:
                 ev["outcome"] = "complete"
                 ev["received_by"] = self.ids[i]
@@ -661,6 +748,12 @@ class MatchSim:
                 "owner": self.ids[self.owner] if self.owner >= 0 else None,
             },
             "players": players,
+            "officials": [
+                {"id": self.off_ids[i], "role": self.off_roles[i],
+                 "x": round(float(self.off_P[i, 0]), 2), "y": round(float(self.off_P[i, 1]), 2),
+                 "speed": round(float(np.linalg.norm(self.off_V[i])), 2)}
+                for i in range(3)
+            ],
         })
 
     def run(self) -> None:
@@ -671,5 +764,6 @@ class MatchSim:
                 self._record(step // self.stride)
             self._tick()
         for ev in self.events:
+            ev.pop("_offside_at", None)  # internal marker of passes never received
             if ev["type"] == "pass" and ev["outcome"] is None:
                 ev["outcome"] = "unresolved"

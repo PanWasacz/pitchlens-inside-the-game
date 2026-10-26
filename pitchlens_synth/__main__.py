@@ -48,6 +48,7 @@ def build_meta(sim: MatchSim, seed: int) -> dict:
         "frame_count": len(sim.frames),
         "teams": teams,
         "final_score": {"home": sim.score[0], "away": sim.score[1]},
+        "officials": [{"id": i, "role": r} for i, r in zip(sim.off_ids, sim.off_roles)],
     }
 
 
@@ -86,7 +87,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--duration", type=float, default=600.0, help="match seconds to simulate")
     ap.add_argument("--hz", type=int, default=10, choices=[10, 25, 50], help="output frame rate")
-    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--seed", type=int, default=20)
     ap.add_argument("--out", type=Path, default=Path("web/public/data/demo"))
     args = ap.parse_args()
 

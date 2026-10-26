@@ -70,7 +70,8 @@ class App {
   private color = DRAW_COLORS[0];
   private drawing = false;
   private pointers = new Map<number, [number, number]>();
-  private pinch: { dist: number; span: number; zoom: number; cx: number; cy: number } | null = null;
+  private pinch: { dist: number; span: number; zoom: number } | null = null;
+  private focus: [number, number] | null = null; // smoothed ball position for the 3D zoom
   private snapCamera = true;
   private lastNow = performance.now();
   private bannerTimer = 0;
@@ -80,7 +81,7 @@ class App {
     this.video = ds.video ? $<HTMLVideoElement>("#video") : null;
     if (this.video && ds.video) this.video.src = ds.video;
     const ev = match.events;
-    this.keyMoments = ev.filter((e) => e.type === "shot").sort((a, b) => a.t - b.t);
+    this.keyMoments = ev.filter((e) => e.type === "shot" || e.type === "offside").sort((a, b) => a.t - b.t);
     this.goals = ev.filter((e) => e.type === "goal");
     this.setupUi();
     if (this.video) {
@@ -210,9 +211,9 @@ class App {
       return;
     }
     for (const e of this.keyMoments) {
-      const outcome = String(e.outcome ?? "");
+      const outcome = e.type === "offside" ? "offside" : String(e.outcome ?? "");
       const team = e.team ? this.match.meta.teams[e.team].short : "";
-      const tag = outcome === "goal" ? "GOAL" : outcome === "saved" ? "SAVE" : "SHOT";
+      const tag = outcome === "goal" ? "GOAL" : outcome === "saved" ? "SAVE" : outcome === "offside" ? "OFFSIDE" : "SHOT";
       const b = document.createElement("button");
       b.className = "moment";
       b.innerHTML =
@@ -229,12 +230,15 @@ class App {
     const dur = this.match.duration;
     for (const e of this.keyMoments) {
       const m = document.createElement("div");
-      const outcome = String(e.outcome ?? "");
-      m.className = `m ${outcome === "goal" ? "goal" : outcome === "saved" ? "" : "miss"}`;
+      const outcome = e.type === "offside" ? "offside" : String(e.outcome ?? "");
+      m.className = `m ${outcome === "goal" ? "goal" : outcome === "saved" ? "" : outcome === "offside" ? "offside" : "miss"}`;
       m.style.left = `${(e.t / dur) * 100}%`;
       if (outcome === "goal" && e.team) m.style.background = this.match.meta.teams[e.team].colors.primary;
       const xg = typeof e.xg === "number" ? `, xG ${e.xg.toFixed(2)}` : "";
-      m.title = `${fmtClock(e.t)}  ${outcome === "goal" ? "GOAL" : "Shot"} - ${this.playerName(e.player)} (${outcome.replace("_", " ")}${xg})`;
+      m.title =
+        outcome === "offside"
+          ? `${fmtClock(e.t)}  OFFSIDE - ${this.playerName(e.player)}`
+          : `${fmtClock(e.t)}  ${outcome === "goal" ? "GOAL" : "Shot"} - ${this.playerName(e.player)} (${outcome.replace("_", " ")}${xg})`;
       markers.append(m);
     }
     const tl = $("#timeline");
@@ -270,7 +274,9 @@ class App {
   private showBanner(e: MatchEvent) {
     const team = e.team ? this.match.meta.teams[e.team] : null;
     const b = $("#banner");
-    b.innerHTML = `<div class="tag">GOAL</div><div class="who">${this.playerName(e.scorer).toUpperCase()}${team ? ` · ${team.short}` : ""}</div>`;
+    const goal = e.type === "goal";
+    const who = this.playerName(goal ? e.scorer : e.player).toUpperCase();
+    b.innerHTML = `<div class="tag${goal ? "" : " flag"}">${goal ? "GOAL" : "OFFSIDE"}</div><div class="who">${who}${team ? ` · ${team.short}` : ""}</div>`;
     b.classList.add("show");
     clearTimeout(this.bannerTimer);
     this.bannerTimer = window.setTimeout(() => b.classList.remove("show"), 4000);
@@ -342,9 +348,8 @@ class App {
         // Second finger: pinch-zoom the TV camera instead of drawing.
         this.drawings.cancel();
         this.drawing = false;
-        const [a, b] = [...this.pointers.values()];
         if ((!this.video && this.view === "main") || this.view === "recon") {
-          this.pinch = { dist: pinchDist(), span: this.tv.span, zoom: this.recon.zoom, cx: (a[0] + b[0]) / 2, cy: (a[1] + b[1]) / 2 };
+          this.pinch = { dist: pinchDist(), span: this.tv.span, zoom: this.recon.zoom };
         }
         return;
       }
@@ -369,7 +374,7 @@ class App {
       if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, [x, y]);
       if (this.pinch && this.pointers.size === 2) {
         const ratio = Math.max(pinchDist(), 1) / this.pinch.dist;
-        if (this.view === "recon") this.recon.setZoom(this.pinch.cx, this.pinch.cy, this.pinch.zoom * ratio);
+        if (this.view === "recon") this.recon.setZoom(this.pinch.zoom * ratio);
         else this.tv.span = Math.min(110, Math.max(24, this.pinch.span / ratio));
         return;
       }
@@ -387,8 +392,7 @@ class App {
     c.onwheel = (e) => {
       if (this.view === "recon") {
         e.preventDefault();
-        const [x, y] = local(e);
-        this.recon.setZoom(x, y, this.recon.zoom * Math.exp(-e.deltaY * 0.0015));
+        this.recon.setZoom(this.recon.zoom * Math.exp(-e.deltaY * 0.0015));
         return;
       }
       if (this.video || this.view !== "main") return;
@@ -458,8 +462,8 @@ class App {
       if (this.t >= this.match.duration) this.playing = false;
     }
     if (this.playing && !this.snapCamera) {
-      const goal = this.goals.find((g) => g.t > prevT && g.t <= this.t);
-      if (goal) this.showBanner(goal);
+      const hit = this.match.events.find((g) => (g.type === "goal" || g.type === "offside") && g.t > prevT && g.t <= this.t);
+      if (hit) this.showBanner(hit);
     }
     this.render(now, dt);
     this.updateTransport();
@@ -486,6 +490,17 @@ class App {
     if (this.video && meta.video) {
       this.vid.update(w, h, meta.video.width, meta.video.height, s.camera);
       this.recon.update(w, h, meta.video.width, meta.video.height, s.camera);
+      // The 3D zoom follows the ball (where the broadcast camera shows it), smoothed.
+      if (s.ball.visible) {
+        const b = this.vid.project(s.ball.x, s.ball.y, 0);
+        if (b.scale > 0) {
+          const k = this.snapCamera || !this.focus ? 1 : 1 - Math.exp(-dt / 0.4);
+          const f = this.focus ?? [b.x, b.y];
+          this.focus = [f[0] + (b.x - f[0]) * k, f[1] + (b.y - f[1]) * k];
+        }
+      }
+      const f = this.focus ?? [w / 2, h / 2];
+      this.recon.setFocus(f[0], f[1]);
     } else {
       const bx = s.ball.visible ? s.ball.x : L / 2;
       const by = s.ball.visible ? s.ball.y : W / 2;
@@ -596,6 +611,17 @@ class App {
         c.stroke();
       }
     }
+    this.match.officials.forEach((_, i) => {
+      if (!s.officials.visible[i]) return;
+      const [x, y] = P(s.officials.x[i], s.officials.y[i]);
+      c.fillStyle = "#15171c";
+      c.strokeStyle = "#FFD23F";
+      c.lineWidth = 1;
+      c.beginPath();
+      c.arc(x, y, 2.6, 0, 2 * Math.PI);
+      c.fill();
+      c.stroke();
+    });
     if (s.ball.visible) {
       const [x, y] = P(s.ball.x, s.ball.y);
       c.fillStyle = "#fff";
@@ -613,7 +639,8 @@ async function main() {
   const available: Dataset[] = [];
   for (const ds of DATASETS) if (ds.key === "demo" || (await datasetAvailable(ds))) available.push(ds);
   // Locally the reconstructed sample match opens first; the public build only has the synthetic demo.
-  const ds = available.find((d) => d.key === params.get("data")) ?? available.find((d) => d.video) ?? available[0];
+  // The synthetic match is the demo; the real-match reconstruction stays opt-in (local only).
+  const ds = available.find((d) => d.key === params.get("data")) ?? available[0];
 
   const select = $<HTMLSelectElement>("#dataset");
   for (const d of available) select.add(new Option(d.label, d.key));

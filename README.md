@@ -21,7 +21,7 @@ Insights Engine for Premier League Studio*).
 
 ```bash
 pip install -r pitchlens_synth/requirements.txt
-python -m pitchlens_synth --seed 12 --duration 600 --hz 10 --out web/public/data/demo
+python -m pitchlens_synth --seed 20 --duration 600 --hz 10 --out web/public/data/demo
 ```
 
 ## Run the studio locally

@@ -7,6 +7,7 @@ import { circlePoints, densify, GOAL_H, GOAL_HALF, L, MARKINGS, SPOTS, W, type P
 export const ACCENT = "#2BF5B6";
 export const FONT = '"Barlow Condensed", "Arial Narrow", system-ui, sans-serif';
 const SKIN = ["#f1c7a5", "#d9a074", "#a8724c", "#6e4a33"];
+const OFFICIAL: TeamColors = { shirt: "#1d1f24", trim: "#0c0d10" };
 
 export function hash(s: string): number {
   let h = 0;
@@ -174,6 +175,19 @@ export function drawPeople(ctx: CanvasRenderingContext2D, cam: Camera, match: Ma
       items.push({ depth: foot.depth, draw: () => drawDisc(ctx, foot.x, foot.y, Math.max(5, 0.95 * foot.scale), col) });
     }
   }
+  match.officials.forEach((o, i) => {
+    if (!s.officials.visible[i]) return;
+    const x = s.officials.x[i];
+    const y = s.officials.y[i];
+    const foot = cam.project(x, y, 0);
+    if (foot.scale <= 0) return;
+    if (cam.hasHeight) {
+      const head = cam.project(x, y, 1.8);
+      items.push({ depth: foot.depth, draw: () => drawFigure(ctx, foot, head, OFFICIAL, SKIN[hash(o.id) % SKIN.length], x * 1.7, 0.6) });
+    } else {
+      items.push({ depth: foot.depth, draw: () => drawDisc(ctx, foot.x, foot.y, Math.max(4, 0.75 * foot.scale), { shirt: OFFICIAL.shirt, trim: "#FFD23F" }) });
+    }
+  });
   if (s.ball.visible) {
     const b = s.ball;
     const shadow = cam.project(b.x, b.y, 0);

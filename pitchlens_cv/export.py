@@ -109,6 +109,7 @@ def main() -> None:
 
     # Raw pitch positions per tracker id.
     raw = defaultdict(list)  # tracker id -> [(frame, x, y, team, role)]
+    officials = defaultdict(list)  # frame -> referees / assistants on the pitch
     balls = {}
     for fr, rec in zip(tracks, calib):
         params = np.r_[rec["rvec"], np.log(rec["f"])]
@@ -119,6 +120,15 @@ def main() -> None:
                 if -MARGIN <= x <= L + MARGIN and -MARGIN <= y <= W + MARGIN:
                     role = "GK" if o["cls"] == "goalkeeper" else "player"
                     raw[o["id"]].append((fr["frame"], float(x), float(y), o["team"], role))
+        refs = [o for o in fr["objects"] if o["cls"] == "referee"]
+        if refs:
+            pts = image_to_pitch(np.array([o["foot"] for o in refs]), params, centre, lens)
+            for o, (x, y) in zip(refs, pts):
+                if -MARGIN <= x <= L + MARGIN and -MARGIN <= y <= W + MARGIN:
+                    # Assistants run the touchlines; the referee is on the pitch.
+                    role = "assistant" if y < 0.5 or y > W - 0.5 else "referee"
+                    officials[fr["frame"]].append({"id": f"R{o['id']:03d}", "role": role,
+                                                   "x": round(float(x), 2), "y": round(float(y), 2), "speed": 0.0})
         if fr["ball"]:
             bx, by = image_to_pitch(np.array([fr["ball"]["center"]]), params, centre, lens)[0]
             if 0 <= bx <= L and 0 <= by <= W:
@@ -183,6 +193,7 @@ def main() -> None:
                 "possession": None,
                 "ball": {"x": round(ball[0], 2), "y": round(ball[1], 2), "z": 0.0, "owner": None} if ball else None,
                 "players": sorted(per_frame.get(i, []), key=lambda p: p["id"]),
+                "officials": officials.get(i, []),
                 "camera": camera,
             }, separators=(",", ":")) + "\n")
 
@@ -207,6 +218,7 @@ def main() -> None:
         "frame_count": len(calib),
         "video": {"file": args.video.name, "width": width, "height": height},
         "teams": teams,
+        "officials": [{"id": i, "role": r} for i, r in sorted({o["id"]: o["role"] for os_ in officials.values() for o in os_}.items())],
     }
     with open(args.out / "meta.json", "w", encoding="utf-8", newline="\n") as fh:
         json.dump(meta, fh, indent=2)

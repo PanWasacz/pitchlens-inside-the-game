@@ -28,7 +28,7 @@ to the grass in every camera view.
 {
   "source": "synthetic",            // "synthetic" | "cv"
   "generator": "pitchlens_synth 0.1.0",
-  "seed": 12,
+  "seed": 20,
   "pitch": { "length": 105.0, "width": 68.0 },
   "fps": 10,                        // frames per second in frames.jsonl
   "duration": 600.0,                // seconds
@@ -74,6 +74,7 @@ One JSON object per line, ordered by `frame`. Frame `i` is at time `i / fps`.
 | `players[].speed` | instantaneous speed, m/s |
 | `players[].dist` | cumulative distance covered since the start, m |
 | `ball.owner` | id of the player controlling the ball, `null` in flight / loose / dead |
+| `officials` | optional: `[{id, role, x, y, speed}]`, `role` is `referee` or `assistant`; ids are listed in `meta.officials` |
 
 The CV pipeline may omit players that are not visible in a frame. Consumers
 should match players by `id`, not by array index.
@@ -116,9 +117,10 @@ Event types and their extra fields:
 | `tackle` | `opponent`, `outcome`: `won` / `lost` |
 | `interception` | `passer` |
 | `possession_change` | (`player` is the one who won the ball; `null` after a ball out of play) |
-| `kickoff`, `goal_kick`, `throw_in`, `corner` | restart taken by `player` |
+| `offside` | `player` is the receiver flagged offside (position at the moment of the pass), `passer`; the pass gets `outcome: offside` |
+| `kickoff`, `goal_kick`, `throw_in`, `corner`, `free_kick` | restart taken by `player` |
 
-The frontend's key moments are the `goal`, `shot` and `save` events.
+The frontend's key moments are the `shot` (incl. goals and saves) and `offside` events.
 
 ## Building data from video (local only)
 
@@ -134,7 +136,7 @@ Data derived from real broadcast footage stays in the git-ignored `match/` folde
 
 ```bash
 pip install -r pitchlens_synth/requirements.txt
-python -m pitchlens_synth --seed 12 --duration 600 --hz 10 --out web/public/data/demo
+python -m pitchlens_synth --seed 20 --duration 600 --hz 10 --out web/public/data/demo
 ```
 
 `--hz` accepts 10, 25 or 50. The same seed always produces the same match.

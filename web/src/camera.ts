@@ -138,6 +138,8 @@ export class VideoCamera implements Camera {
   zoom = 1;
   private tx = 0;
   private ty = 0;
+  private fx = 0;
+  private fy = 0;
 
   /** Video frame (vw x vh) letterboxed into the canvas, like object-fit: contain. */
   update(width: number, height: number, vw: number, vh: number, camera: Float64Array | null) {
@@ -149,15 +151,27 @@ export class VideoCamera implements Camera {
     if (camera) this.m = camera;
   }
 
-  /** Zoom to `zoom` keeping the scene point under (mx, my) in place; 1x..4x. */
-  setZoom(mx: number, my: number, zoom: number) {
-    const z = Math.min(4, Math.max(1, zoom));
-    this.tx = mx - ((mx - this.tx) * z) / this.zoom;
-    this.ty = my - ((my - this.ty) * z) / this.zoom;
-    this.zoom = z;
-    // Keep the picture covering the screen; back at 1x the framing is the broadcast one.
-    this.tx = Math.min(0, Math.max(this.w * (1 - z), this.tx));
-    this.ty = Math.min(0, Math.max(this.h * (1 - z), this.ty));
+  /** Zoom factor 1x..4x. At 1x the framing is exactly the broadcast one. */
+  setZoom(zoom: number) {
+    this.zoom = Math.min(4, Math.max(1, zoom));
+    this.reframe();
+  }
+
+  /**
+   * Point (unzoomed screen coordinates, usually the ball) the zoom is centred on.
+   * It slides to the middle of the screen as the zoom grows, like the TV camera.
+   */
+  setFocus(fx: number, fy: number) {
+    this.fx = fx;
+    this.fy = fy;
+    this.reframe();
+  }
+
+  private reframe() {
+    const z = this.zoom;
+    const a = Math.min(1, (z - 1) / 0.5);
+    this.tx = this.fx + (this.w / 2 - this.fx) * a - this.fx * z;
+    this.ty = this.fy + (this.h * 0.55 - this.fy) * a - this.fy * z;
   }
 
   project(x: number, y: number, z = 0): Projected {
