@@ -90,14 +90,37 @@ def check_text(m: Match, text: str, evidence: Evidence) -> list[str]:
     return problems
 
 
+def supporting_facts(m: Match, text: str, facts: list[Fact]) -> list[Fact]:
+    """Facts that contain at least one of the numbers, times or player names in text."""
+    nums, clocks = numbers_in(text)
+    names = [full for surname, full in surnames(m).items() if re.search(r"(?<![\w-])" + re.escape(surname), text)]
+    out = []
+    for f in facts:
+        ev = Evidence([f])
+        if (any(ev.has_number(v, d) for v, d, _ in nums) or any(ev.has_clock(c) for c in clocks)
+                or any(n in ev.blob for n in names)):
+            out.append(f)
+    return out
+
+
 def check_sentences(m: Match, sentences: list[dict], facts: dict[str, Fact], context: Fact) -> list[dict]:
-    """Issues per sentence: [{"sentence": i, "problem": "..."}]."""
+    """Issues per sentence: [{"sentence": i, "problem": "..."}].
+
+    A sentence without usable citations is still accepted when everything it states is
+    found in the session's facts; the Verifier then cites the facts that support it."""
     issues = []
     for i, s in enumerate(sentences):
         cited = [facts[fid] for fid in s.get("facts", []) if fid in facts]
         unknown = [fid for fid in s.get("facts", []) if fid not in facts]
         if not cited:
-            issues.append({"sentence": i, "problem": "sentence cites no known fact", "by": "code"})
+            text = s.get("text", "")
+            problems = check_text(m, text, Evidence(list(facts.values())))
+            if problems:
+                got = s.get("raw_facts") or s.get("facts") or "nothing"
+                issues.append({"sentence": i, "problem": f"no usable citation (got {got!r}); {problems[0]}", "by": "code"})
+            else:
+                s["facts"] = [f.id for f in supporting_facts(m, text, [f for f in facts.values() if f is not context])]
+                s["auto_cited"] = True
             continue
         if unknown:
             issues.append({"sentence": i, "problem": f"unknown fact ids {', '.join(unknown)}", "by": "code"})

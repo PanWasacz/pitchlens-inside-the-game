@@ -118,11 +118,28 @@ class SentenceParsing(unittest.TestCase):
             ({"text": "Offside by 0.8 m [f3]", "facts": "f3, f5"}, "Offside by 0.8 m", ["f3", "f5"]),
             ({"text": "Plain sentence.", "facts": ["f2"]}, "Plain sentence.", ["f2"]),
             ({"text": "Tied 1-1 (f1, f5 and f3).", "fact_ids": ["f1"]}, "Tied 1-1.", ["f1", "f5", "f3"]),
+            ({"text": "A line.", "sources": ["F2", "fact 4"]}, "A line.", ["f2", "f4"]),
         ]
         for raw, text, ids in cases:
             out = agents.parse_sentence(raw)
             self.assertEqual(out["text"], text)
             self.assertEqual(out["facts"], ids)
+
+
+class AutoCitation(unittest.TestCase):
+    def test_uncited_sentence_backed_by_facts_is_kept(self):
+        from pitchlens_agents.verify import check_sentences
+
+        store = FactStore()
+        ctx = run_tool(M, store, "get_events", {"t_from": 200, "t_to": 216})
+        off = run_tool(M, store, "get_offside_state", {"t": OFFSIDE_PASS_T, "defending": "away"})
+        by_id = {f.id: f for f in store.facts}
+        good = {"text": "N. Pellegrue was 0.8 m beyond the line set by C. Delacroix-Hume.", "facts": []}
+        bad = {"text": "N. Pellegrue was 2.7 m offside.", "facts": []}
+        issues = check_sentences(M, [good, bad], by_id, ctx)
+        self.assertEqual([i["sentence"] for i in issues], [1])
+        self.assertIn(off.id, good["facts"])
+        self.assertTrue(good["auto_cited"])
 
 
 class Precomputed(unittest.TestCase):

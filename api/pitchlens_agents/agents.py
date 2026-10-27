@@ -279,22 +279,24 @@ def _parse_or_none(text: str | None) -> dict | None:
         return None
 
 
-FACT_ID = re.compile(r"\bf\d+\b")
-INLINE_CITE = re.compile(r"\s*[\(\[]\s*f\d+(?:(?:\s*[,;&]\s*|\s+)(?:and\s+)?f\d+)*\s*[\)\]]")
+FACT_ID = re.compile(r"\b(?:f|fact)[\s_#-]?(\d+)\b", re.I)
+INLINE_CITE = re.compile(r"\s*[\(\[]\s*(?:facts?\s*:?\s*)?f\d+(?:(?:\s*[,;&]\s*|\s+)(?:and\s+)?f\d+)*\s*[\)\]]", re.I)
 
 
 def parse_sentence(s: dict) -> dict:
     """Normalise one Explainer sentence. Models sometimes write the citations into the
     text ("... (f4, f6).") or as one string ("f4, f6"); collect the ids from both."""
     text = str(s.get("text", "")).strip()
-    raw = s.get("facts") or s.get("fact_ids") or []
-    if isinstance(raw, str):
+    raw = s.get("facts")
+    if not raw:  # some models pick their own key: fact_ids, sources, citations, evidence...
+        raw = next((v for k, v in s.items() if k != "text" and re.search(r"fact|source|cit|evid|ref", k, re.I)), [])
+    if not isinstance(raw, list):
         raw = [raw]
     ids: list[str] = []
     for item in [*map(str, raw), *INLINE_CITE.findall(text)]:
-        ids += [f for f in FACT_ID.findall(item) if f not in ids]
+        ids += [f"f{n}" for n in FACT_ID.findall(item) if f"f{n}" not in ids]
     text = INLINE_CITE.sub("", text).strip()
-    return {"text": text, "facts": ids}
+    return {"text": text, "facts": ids, "raw_facts": raw}
 
 
 def explainer(llm: LLM, budget: Budget, moment_info: dict, facts: list[Fact], problems: list[dict] | None, draft: list[dict] | None) -> list[dict]:
@@ -444,7 +446,8 @@ def explain(req: dict, m: Match | None = None, llm: LLM | None = None, use_preco
             trace.add("Verifier", "error", f"Logic check failed ({e}); code checks only.")
     details = [f"#{i['sentence'] + 1} ({i['by']}): {i['problem']}" for i in issues]
     if not issues:
-        trace.add("Verifier", "ok", f"All {len(sentences)} sentence(s) passed number, name and logic checks.")
+        auto = [f"#{j + 1} cited automatically: {', '.join(s['facts']) or 'no numbers or names'}" for j, s in enumerate(sentences) if s.get("auto_cited")]
+        trace.add("Verifier", "ok", f"All {len(sentences)} sentence(s) passed number, name and logic checks.", auto)
     elif used_model and budget.allows(15):
         trace.add("Verifier", "revise", f"{len(issues)} issue(s) found; sent back to the Explainer once.", details)
         draft = sentences
