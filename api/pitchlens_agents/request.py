@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .match import Match
+from .match import DATASET_DIRS, Match
 
 MODES = ("analyst", "fan")
 TASKS = ("moment", "recap")
@@ -12,6 +12,15 @@ MAX_ZONES = 3
 
 class BadRequest(ValueError):
     pass
+
+
+def dataset_key(body) -> str:
+    if not isinstance(body, dict):
+        raise BadRequest("body must be a JSON object")
+    key = body.get("dataset", "demo")
+    if not isinstance(key, str) or key not in DATASET_DIRS:
+        raise BadRequest("dataset is not available")
+    return key
 
 
 def _num(v, name: str) -> float:
@@ -24,6 +33,7 @@ def parse_request(body, m: Match) -> dict:
     if not isinstance(body, dict):
         raise BadRequest("body must be a JSON object")
     t = min(max(_num(body.get("t"), "t"), 0.0), m.duration)
+    selected_dataset = dataset_key(body)
     event_id = body.get("event_id")
     if event_id is not None and (isinstance(event_id, bool) or not isinstance(event_id, int)):
         raise BadRequest("event_id must be an integer")
@@ -50,4 +60,4 @@ def parse_request(body, m: Match) -> dict:
         clamp_x = lambda v: round(min(max(v, 0.0), m.length), 1)  # noqa: E731
         clamp_y = lambda v: round(min(max(v, 0.0), m.width), 1)  # noqa: E731
         zones.append({"x0": clamp_x(x0), "y0": clamp_y(y0), "x1": clamp_x(x1), "y1": clamp_y(y1)})
-    return {"task": task, "t": round(t, 1), "event_id": event_id, "mode": mode, "lang": lang, "team": team, "player": player, "zones": zones}
+    return {"task": task, "t": round(t, 1), "event_id": event_id, "mode": mode, "lang": lang, "team": team, "player": player, "zones": zones, "dataset": selected_dataset}

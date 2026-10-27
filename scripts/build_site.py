@@ -31,6 +31,9 @@ def main() -> None:
         shutil.copy2(api / name, SITE / name)
     shutil.copytree(api / "pitchlens_agents", SITE / "pitchlens_agents", ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copytree(api / "data", SITE / "data")
+    scenarios = REPO / "web" / "public" / "data" / "scenarios"
+    if scenarios.is_dir():
+        shutil.copytree(scenarios, SITE / "data" / "scenarios")
     shutil.copytree(dist, SITE / "static")
     for f in (SITE / "static").rglob("*"):
         if f.is_file() and f.suffix in COMPRESS and f.stat().st_size > 1024:

@@ -26,8 +26,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from pitchlens_agents.agents import explain  # noqa: E402
-from pitchlens_agents.match import demo_match  # noqa: E402
-from pitchlens_agents.request import BadRequest, parse_request  # noqa: E402
+from pitchlens_agents.match import dataset_match, demo_match  # noqa: E402
+from pitchlens_agents.request import BadRequest, dataset_key, parse_request  # noqa: E402
 
 STATIC = ROOT / "static"
 ON_AZURE = bool(os.environ.get("WEBSITE_SITE_NAME"))
@@ -78,7 +78,8 @@ class Handler(BaseHTTPRequestHandler):
         started = time.monotonic()
         try:
             body = json.loads(self.rfile.read(size) or b"null")
-            result = explain(parse_request(body, demo_match()))
+            match = dataset_match(dataset_key(body))
+            result = explain(parse_request(body, match), match)
         except (json.JSONDecodeError, BadRequest) as e:
             return self._json({"status": "error", "message": str(e)}, 400)
         except Exception:  # never leak internals to the public endpoint

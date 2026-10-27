@@ -395,7 +395,7 @@ def explain(req: dict, m: Match | None = None, llm: LLM | None = None, use_preco
         t = (t // RECAP_STEP_S) * RECAP_STEP_S
     moment = recap_moment(m, t) if recap else resolve_moment(m, t, req.get("event_id"))
     mkey = moment_key(req, moment)
-    if use_precomputed and mkey and mkey in precomputed():
+    if use_precomputed and m.is_demo and mkey and mkey in precomputed():
         return {**precomputed()[mkey], "cached": True, "precomputed": True}
     key = mkey or _cache_key(req)
     key = f"{key}|{llm.available}"
