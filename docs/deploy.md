@@ -19,17 +19,17 @@ browser (web/dist)  ──POST /api/explain──▶  Static Web App managed Fun
 
 1. [portal.azure.com](https://portal.azure.com) → **Create a resource** → **Static Web App**.
 2. Plan **Free**, region **West Europe**.
-3. Source **GitHub** → sign in → repository `pitchlens-inside-the-game`, branch `main`.
-4. Build presets **Custom**:
-   | field | value |
-   |---|---|
-   | App location | `web` |
-   | Api location | `api` |
-   | Output location | `dist` |
-5. **Create**. Azure commits a GitHub Actions workflow
-   (`.github/workflows/azure-static-web-apps-*.yml`) and runs the first deployment.
-   Run `git pull` afterwards so you have it locally.
-6. The site URL is on the resource's **Overview** page. Every push to `main` redeploys.
+3. Deployment source **Other** (the repository already has its own workflow,
+   `.github/workflows/azure-static-web-apps.yml`, so the Azure subscription owner
+   needs no access to the GitHub repository).
+   CLI equivalent: `az staticwebapp create -n pitchlens-studio -g rg-pitchlens -l westeurope --sku Free`.
+4. Copy the deployment token: resource → **Manage deployment token**
+   (or `az staticwebapp secrets list -n pitchlens-studio -g rg-pitchlens --query properties.apiKey -o tsv`).
+5. In GitHub: repository → **Settings → Secrets and variables → Actions** →
+   new secret `AZURE_STATIC_WEB_APPS_API_TOKEN` with that token.
+6. Run the workflow from the **Actions** tab (or push to `main`). It runs the agent
+   tests, builds `web/` (output `dist`) and deploys `web/` plus `api/`.
+   The site URL is on the resource's **Overview** page. Every push to `main` redeploys.
 
 `web/staticwebapp.config.json` sets the Python 3.11 API runtime, the `.jsonl`
 MIME type, cache headers for `/data/*` and the SPA fallback, and blocks `/local/*`.

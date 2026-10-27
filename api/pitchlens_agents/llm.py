@@ -22,6 +22,9 @@ import urllib.request
 
 DEFAULT_API_VERSION = "2024-10-21"
 
+# Deployments known to be reasoning models, remembered across requests in this worker.
+_REASONING: set[str] = set()
+
 
 class LLMError(RuntimeError):
     pass
@@ -34,6 +37,8 @@ class LLM:
         self.deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT", "").strip()
         self.api_version = os.environ.get("AZURE_OPENAI_API_VERSION", DEFAULT_API_VERSION).strip()
         self.timeout = timeout
+        # Switched on when the deployment rejects max_tokens / temperature.
+        self.reasoning = self.deployment in _REASONING
         self.calls = 0
         self.tokens = 0
 
@@ -57,29 +62,41 @@ class LLM:
         timeout: float | None = None,
     ) -> dict:
         """One chat completion; returns the assistant message dict."""
-        body: dict = {"messages": messages, "temperature": temperature, "max_tokens": max_tokens}
-        if self.endpoint.endswith("/openai/v1"):
-            body["model"] = self.deployment
-        if tools:
-            body["tools"] = tools
-            body["tool_choice"] = "auto"
-        if json_mode:
-            body["response_format"] = {"type": "json_object"}
-        req = urllib.request.Request(
-            self._url(),
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json", "api-key": self.key},
-            method="POST",
-        )
-        self.calls += 1
-        try:
-            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")[:300]
-            raise LLMError(f"model returned HTTP {e.code}: {detail}") from e
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            raise LLMError(f"model unreachable: {e}") from e
+        for attempt in range(2):
+            body: dict = {"messages": messages}
+            if self.reasoning:
+                # Reasoning models (o-series, gpt-5) reject max_tokens and custom temperature.
+                body["max_completion_tokens"] = max_tokens * 4
+            else:
+                body["max_tokens"] = max_tokens
+                body["temperature"] = temperature
+            if self.endpoint.endswith("/openai/v1"):
+                body["model"] = self.deployment
+            if tools:
+                body["tools"] = tools
+                body["tool_choice"] = "auto"
+            if json_mode:
+                body["response_format"] = {"type": "json_object"}
+            req = urllib.request.Request(
+                self._url(),
+                data=json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json", "api-key": self.key},
+                method="POST",
+            )
+            self.calls += 1
+            try:
+                with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                break
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode("utf-8", "replace")[:300]
+                if e.code == 400 and attempt == 0 and not self.reasoning and ("max_tokens" in detail or "temperature" in detail):
+                    self.reasoning = True
+                    _REASONING.add(self.deployment)
+                    continue
+                raise LLMError(f"model returned HTTP {e.code}: {detail}") from e
+            except (urllib.error.URLError, TimeoutError, OSError) as e:
+                raise LLMError(f"model unreachable: {e}") from e
         self.tokens += int(payload.get("usage", {}).get("total_tokens", 0))
         try:
             return payload["choices"][0]["message"]

@@ -137,5 +137,30 @@ class AgentLoop(unittest.TestCase):
         self.assertTrue(any(e["tool"] == "get_offside_state" for e in r["evidence"]))
 
 
+class ReasoningModelRetry(unittest.TestCase):
+    def test_switches_to_max_completion_tokens(self):
+        import io
+        import urllib.error
+        from unittest import mock
+
+        bodies = []
+
+        def fake_urlopen(req, timeout):
+            body = json.loads(req.data)
+            bodies.append(body)
+            if "max_tokens" in body:
+                err = io.BytesIO(b'{"error": "Unsupported parameter: max_tokens"}')
+                raise urllib.error.HTTPError(req.full_url, 400, "bad", {}, err)
+            ok = {"choices": [{"message": {"content": '{"ok": true}'}}], "usage": {"total_tokens": 5}}
+            return mock.MagicMock(__enter__=lambda s: io.BytesIO(json.dumps(ok).encode()), __exit__=lambda *a: False)
+
+        llm = LLM()
+        llm.endpoint, llm.key, llm.deployment = "https://example.invalid", "test", "reasoning-test"
+        with mock.patch("urllib.request.urlopen", fake_urlopen):
+            self.assertEqual(llm.chat_json([{"role": "user", "content": "hi"}]), {"ok": True})
+        self.assertIn("max_completion_tokens", bodies[-1])
+        self.assertNotIn("temperature", bodies[-1])
+
+
 if __name__ == "__main__":
     unittest.main()
