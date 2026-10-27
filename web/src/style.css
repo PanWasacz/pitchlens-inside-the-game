@@ -261,6 +261,204 @@ body.momentum-open #tools {
   margin: 0 0 6px;
 }
 
+#report {
+  position: fixed;
+  right: 12px;
+  top: 64px;
+  width: min(520px, calc(100% - 24px));
+  max-height: calc(100% - 110px);
+  overflow: auto;
+  padding: 14px 16px;
+}
+
+#report h2,
+#report h3 {
+  font: 700 20px var(--display);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+}
+
+#report h3 {
+  font-size: 16px;
+  margin-top: 16px;
+}
+
+.report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.report-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.report-actions button:first-child {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.report-chart {
+  width: 100%;
+  height: 150px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
+
+.report-chart line {
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 1;
+}
+
+.report-chart .momentum-lines line {
+  fill: none;
+  stroke-width: 2.5;
+}
+
+.report-chart text {
+  font-size: 11px;
+}
+
+.report-chart .chart-axis {
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 1;
+}
+
+.report-chart text:first-of-type {
+  fill: var(--report-home, var(--home));
+}
+
+.report-chart text:last-of-type {
+  fill: var(--report-away, var(--away));
+}
+
+.pitch-map {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 105 / 68;
+  max-height: none;
+  background: #1f6b32;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.pitch-map > rect {
+  fill: #1f6b32;
+}
+
+.pitch-map > path,
+.pitch-map > circle {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.7);
+  stroke-width: 0.35;
+}
+
+.pitch-map .shot-home,
+.pitch-map .shot-away {
+  stroke-width: 0.25;
+}
+
+.pitch-map .shot-home {
+  fill: var(--home);
+  stroke: #fff;
+}
+
+.pitch-map .shot-away {
+  fill: var(--away);
+  stroke: #fff;
+}
+
+.formation-map text {
+  fill: #fff;
+  font-size: 2px;
+  text-anchor: middle;
+}
+
+.heat-map .heat-home {
+  fill: var(--home);
+}
+
+.heat-map .heat-away {
+  fill: var(--away);
+}
+
+.report-head button {
+  font-size: 22px;
+  padding: 2px 8px;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table th,
+.report-table td {
+  padding: 5px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.report-table th:first-child,
+.report-table td:first-child {
+  text-align: left;
+}
+
+.report-table thead th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.momentum-report {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.momentum-row {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 2px 8px;
+  padding: 5px 7px;
+  border-left: 3px solid var(--accent);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.momentum-row span,
+.momentum-row small {
+  color: var(--muted);
+}
+
+.momentum-row small {
+  grid-column: 2;
+  font-size: 10px;
+}
+
+.report-callout {
+  color: var(--accent);
+}
+
+.report-moments {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.report-moment {
+  display: grid;
+  grid-template-columns: 48px 70px 1fr;
+  gap: 6px;
+  text-align: left;
+  padding: 5px 7px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .ai-actions {
   display: flex;
   gap: 6px;

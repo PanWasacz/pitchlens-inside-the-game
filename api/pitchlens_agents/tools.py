@@ -424,6 +424,95 @@ def top_player(m: Match, t: float) -> str | None:
     return max(tally, key=lambda pid: tally[pid]) if tally else None
 
 
+def build_match_report(m: Match) -> dict:
+    """Build the deterministic, presentation-ready report for a complete match."""
+    summary, _ = get_match_summary(m, m.duration)
+    momentum, _ = get_momentum(m, 0.0, m.duration)
+    momentum_chart = []
+    window = 15.0
+    for t in range(0, int(m.duration) + 1):
+        a = m.frame_index(max(0.0, t - window))
+        b = m.frame_index(t)
+        home = sum(fr.get("possession") == "home" for fr in m.frames[a:b + 1])
+        away = sum(fr.get("possession") == "away" for fr in m.frames[a:b + 1])
+        total = home + away
+        momentum_chart.append({"t": t, "v": round((home - away) / total, 3) if total else 0.0})
+    player_rows = []
+    for player_id, player in m.players.items():
+        stats, _ = get_player_stats(m, player_id, m.duration)
+        player_rows.append(stats)
+    player_rows.sort(key=lambda row: (row.get("goals", 0), row.get("shots", 0), row.get("distance_km", 0)), reverse=True)
+    key_moments = [
+        {**_event_row(m, event), "t_seconds": round(event["t"], 1)}
+        for event in m.events
+        if event["type"] in ("shot", "goal", "offside", "save")
+    ]
+    shots = [
+        {
+            "x": round(event["x"], 1),
+            "y": round(event["y"], 1),
+            "team": event["team"],
+            "team_short": m.short(event["team"]),
+            "outcome": event.get("outcome"),
+            "xg": round(event.get("xg", 0.0), 2),
+            "player": m.name(event.get("player")),
+        }
+        for event in m.events
+        if event["type"] == "shot"
+    ]
+    position_totals = {
+        player_id: {"x": 0.0, "y": 0.0, "n": 0, "team": player["team"], "name": player["name"], "position": player["position"]}
+        for player_id, player in m.players.items()
+    }
+    heatmap = {"home": [[0 for _ in range(7)] for _ in range(4)], "away": [[0 for _ in range(7)] for _ in range(4)]}
+    for frame in m.frames:
+        for item in frame["players"]:
+            total = position_totals.get(item["id"])
+            if total is None:
+                continue
+            total["x"] += item["x"]
+            total["y"] += item["y"]
+            total["n"] += 1
+            col = min(6, max(0, int(item["x"] / m.length * 7)))
+            row = min(3, max(0, int(item["y"] / m.width * 4)))
+            heatmap[item["team"]][row][col] += 1
+    positions = [
+        {
+            "player": item["name"],
+            "team": m.short(item["team"]),
+            "position": item["position"],
+            "x": round(item["x"] / max(1, item["n"]), 1),
+            "y": round(item["y"] / max(1, item["n"]), 1),
+        }
+        for item in position_totals.values()
+    ]
+    return {
+        "status": "ok",
+        "match": {
+            "home": m.team("home"),
+            "away": m.team("away"),
+            "score": summary["score"],
+            "duration": summary["until"],
+            "duration_seconds": m.duration,
+        },
+        "teams": {"home": summary["home"], "away": summary["away"]},
+        "goals": summary["goals"],
+        "momentum": momentum,
+        "momentum_chart": {
+            "window_s": window,
+            "points": momentum_chart,
+            "home_color": m.team("home")["colors"]["primary"],
+            "away_color": m.team("away")["colors"]["primary"],
+        },
+        "key_moments": key_moments,
+        "shots": shots,
+        "average_positions": positions,
+        "heatmap": heatmap,
+        "players": player_rows,
+        "most_distance": summary["most_distance"],
+    }
+
+
 TOOLS = {
     "get_events": get_events,
     "get_momentum": get_momentum,

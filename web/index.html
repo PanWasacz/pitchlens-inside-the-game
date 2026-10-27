@@ -36,6 +36,7 @@
       <div class="panel group">
         <select id="dataset" aria-label="Match source"></select>
         <button id="insightsBtn" aria-pressed="false">Insights</button>
+        <button id="reportBtn" aria-pressed="false">Report</button>
       </div>
     </header>
 
@@ -92,6 +93,14 @@
         <button id="recap" title="The match so far, up to the current time">Recap so far</button>
       </div>
       <div id="explainOut" aria-live="polite"></div>
+    </aside>
+
+    <aside id="report" class="panel" hidden>
+      <div class="report-head">
+        <h2>Match report</h2>
+        <div class="report-actions"><button id="reportDownload">Download PDF</button><button id="reportClose" aria-label="Close report">×</button></div>
+      </div>
+      <div id="reportOut" aria-live="polite"><p class="muted">Loading report…</p></div>
     </aside>
 
     <div id="help" class="panel" hidden>

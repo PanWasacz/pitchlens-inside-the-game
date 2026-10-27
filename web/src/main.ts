@@ -49,6 +49,21 @@ interface Explanation {
   message?: string;
 }
 
+interface MatchReport {
+  status: string;
+  match: { home: { name: string; short: string; formation: string; colors?: { primary: string } }; away: { name: string; short: string; formation: string; colors?: { primary: string } }; score: string; duration: string; duration_seconds?: number };
+  teams: { home: Record<string, unknown>; away: Record<string, unknown> };
+  goals: { clock: string; team: string; scorer: string; assist?: string }[];
+  momentum?: { spells?: Record<string, unknown>[]; biggest_swing?: { at: string; towards: string; control_change: number } };
+  key_moments: Record<string, unknown>[];
+  players: Record<string, unknown>[];
+  most_distance: { player: string; team: string; distance_km: number };
+  shots?: { x: number; y: number; team: string; team_short: string; outcome?: string; xg: number; player: string }[];
+  average_positions?: { player: string; team: string; position: string; x: number; y: number }[];
+  heatmap?: { home: number[][]; away: number[][] };
+  momentum_chart?: { window_s: number; points: { t: number; v: number }[]; home_color: string; away_color: string };
+}
+
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 const DRAW_COLORS = ["#FFE14D", "#FFFFFF", "#2BF5B6", "#FF5A5F"];
@@ -251,6 +266,11 @@ class App {
       panel.hidden = !panel.hidden;
       $("#insightsBtn").setAttribute("aria-pressed", String(!panel.hidden));
     };
+    $("#reportBtn").onclick = () => this.toggleReport();
+    $("#reportClose").onclick = () => this.toggleReport(false);
+    $("#reportDownload").onclick = () => {
+      window.location.href = `/api/report.pdf?dataset=${encodeURIComponent(this.datasetKey)}`;
+    };
     $("#explain").onclick = () => this.explain("moment");
     $("#recap").onclick = () => this.explain("recap");
     for (const b of $$<HTMLButtonElement>("[data-audience]")) {
@@ -259,6 +279,7 @@ class App {
         for (const o of $$("[data-audience]")) o.setAttribute("aria-pressed", String(o === b));
       };
     }
+
     $('#aiTeam option[value="home"]').textContent = `${this.match.meta.teams.home.short} fan`;
     $('#aiTeam option[value="away"]').textContent = `${this.match.meta.teams.away.short} fan`;
     $("#helpBtn").onclick = () => ($("#help").hidden = !$("#help").hidden);
@@ -270,6 +291,83 @@ class App {
     this.setupPointer();
     this.setupKeys();
     this.updateScorebug();
+  }
+
+  private toggleReport(show?: boolean) {
+    const panel = $("#report");
+    const open = show ?? panel.hidden;
+    panel.hidden = !open;
+    $("#reportBtn").setAttribute("aria-pressed", String(open));
+    if (open && !panel.dataset.loaded) void this.loadReport();
+  }
+
+  private async loadReport() {
+    const out = $("#reportOut");
+    try {
+      const response = await fetch(`/api/report?dataset=${encodeURIComponent(this.datasetKey)}`);
+      const report = (await response.json()) as MatchReport;
+      if (!response.ok || report.status !== "ok") throw new Error("Report is unavailable.");
+      this.renderReport(out, report);
+      $("#report").dataset.loaded = "true";
+    } catch (error) {
+      out.innerHTML = `<p class="muted">${esc(error instanceof Error ? error.message : "Report is unavailable.")}</p>`;
+    }
+  }
+
+  private renderReport(out: HTMLElement, report: MatchReport) {
+    const home = report.match.home;
+    const away = report.match.away;
+    const reportPanel = $("#report");
+    reportPanel.style.setProperty("--report-home", home.colors?.primary ?? "#E63946");
+    reportPanel.style.setProperty("--report-away", away.colors?.primary ?? "#3FA7F5");
+    const teamRows = ["possession_pct", "shots", "shots_on_target", "xg", "passes", "pass_accuracy_pct", "tackles_won", "interceptions", "offsides"];
+    const labels: Record<string, string> = {
+      possession_pct: "Possession", shots: "Shots", shots_on_target: "On target", xg: "xG",
+      passes: "Passes", pass_accuracy_pct: "Pass accuracy", tackles_won: "Tackles won",
+      interceptions: "Interceptions", offsides: "Offsides",
+    };
+    const momentum = report.momentum ?? { spells: [] };
+    const shots = report.shots ?? [];
+    const averagePositions = report.average_positions ?? [];
+    const heatmap = report.heatmap ?? { home: [], away: [] };
+    const val = (team: "home" | "away", key: string) => String(report.teams[team][key] ?? 0) + (key.endsWith("_pct") ? "%" : "");
+    const stats = teamRows.map((key) => `<tr><th>${labels[key]}</th><td>${val("home", key)}</td><td>${val("away", key)}</td></tr>`).join("");
+    const chart = report.momentum_chart;
+    const chartPoints = chart?.points ?? [];
+    const duration = report.match.duration_seconds ?? 1;
+    const momentumSegments = chartPoints.slice(1).map((point, i) => {
+      const previous = chartPoints[i];
+      const x1 = 10 + 500 * previous.t / duration;
+      const x2 = 10 + 500 * point.t / duration;
+      const y1 = 75 - previous.v * 55;
+      const y2 = 75 - point.v * 55;
+      return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${point.v >= 0 ? chart?.home_color ?? "#e63946" : chart?.away_color ?? "#3fa7f5"}"/>`;
+    }).join("");
+    const momentumChart = `<svg class="report-chart" viewBox="0 0 520 150" role="img" aria-label="Momentum chart"><line class="chart-axis" x1="10" y1="20" x2="10" y2="130"/><line class="chart-axis" x1="10" y1="75" x2="510" y2="75"/><g class="momentum-lines">${momentumSegments}</g><text x="16" y="18" fill="${chart?.home_color ?? "#e63946"}">${esc(home.short)}</text><text x="470" y="18" fill="${chart?.away_color ?? "#3fa7f5"}">${esc(away.short)}</text></svg>`;
+    const shotMap = `<svg class="pitch-map" viewBox="0 0 105 68" role="img" aria-label="Shot map"><rect width="105" height="68"/><path d="M52.5 0v68M0 0h105v68H0z"/><circle cx="52.5" cy="34" r="9"/><path d="M0 14h16v40H0M105 14H89v40h16"/>${shots.map((shot) => `<circle class="${shot.team === "home" ? "shot-home" : "shot-away"}" cx="${shot.x}" cy="${shot.y}" r="${shot.outcome === "goal" ? 1.8 : 1.1}"/>`).join("")}</svg>`;
+    const formationMap = `<svg class="pitch-map formation-map" viewBox="0 0 105 68" role="img" aria-label="Average player positions"><rect width="105" height="68"/><path d="M52.5 0v68M0 0h105v68H0z"/><circle cx="52.5" cy="34" r="9"/>${averagePositions.map((player) => `<circle class="${player.team === home.short ? "shot-home" : "shot-away"}" cx="${player.x}" cy="${player.y}" r="1.2"/><text x="${player.x}" y="${player.y - 1.8}">${esc(player.player.split(" ").pop() ?? "")}</text>`).join("")}</svg>`;
+    const heatValues = [...heatmap.home.flat(), ...heatmap.away.flat()];
+    const heatMax = Math.max(...heatValues, 1);
+    const heatMap = `<svg class="pitch-map heat-map" viewBox="0 0 105 68" role="img" aria-label="Position heat map"><rect width="105" height="68"/><path d="M52.5 0v68M0 0h105v68H0z"/>${(["home", "away"] as const).flatMap((team) => heatmap[team].flatMap((row, r) => row.map((count, c) => `<rect class="${team === "home" ? "heat-home" : "heat-away"}" x="${c * 15}" y="${r * 17}" width="15" height="17" opacity="${(0.08 + 0.42 * count / heatMax).toFixed(2)}"/>`))).join("")}</svg>`;
+    const players = report.players.slice(0, 8).map((player) =>
+      `<tr><td>${esc(String(player.player))}</td><td>${esc(String(player.team))}</td><td>${player.goals ?? 0}</td><td>${player.shots ?? 0}</td><td>${player.distance_km ?? 0} km</td><td>${player.top_speed_kmh ?? 0}</td></tr>`
+    ).join("");
+    const moments = report.key_moments.map((event) =>
+      `<button class="report-moment" data-time="${event.t_seconds ?? 0}"><b>${esc(String(event.clock))}</b><span>${esc(String(event.type))}</span><span>${esc(String(event.player ?? event.scorer ?? ""))}</span></button>`
+    ).join("");
+    out.innerHTML =
+      `<h3>${esc(home.name)} ${esc(report.match.score)} ${esc(away.name)}</h3>` +
+      `<p class="muted">${esc(home.formation)} · ${esc(away.formation)} · ${esc(report.match.duration)}</p>` +
+      `<h3>Team statistics</h3><table class="report-table"><thead><tr><th></th><th>${esc(home.short)}</th><th>${esc(away.short)}</th></tr></thead><tbody>${stats}</tbody></table>` +
+      `<h3>Momentum</h3>${momentumChart}` +
+      (momentum.biggest_swing ? `<p class="report-callout">Biggest swing: ${esc(momentum.biggest_swing.towards)} at ${esc(momentum.biggest_swing.at)} (+${momentum.biggest_swing.control_change})</p>` : "") +
+      `<h3>Top players</h3><table class="report-table"><thead><tr><th>Player</th><th>Team</th><th>G</th><th>S</th><th>Dist.</th><th>Top km/h</th></tr></thead><tbody>${players}</tbody></table>` +
+      `<h3>Key moments</h3><div class="report-moments">${moments || `<p class="muted">No key moments.</p>`}</div>` +
+      `<h3>Shot map</h3>${shotMap}<h3>Average positions</h3>${formationMap}<h3>Position heat map</h3>${heatMap}` +
+      `<p class="muted">Most distance: ${esc(report.most_distance.player)} (${esc(report.most_distance.team)}), ${report.most_distance.distance_km} km</p>`;
+    for (const button of $$<HTMLButtonElement>(".report-moment")) {
+      button.onclick = () => this.seek(Number(button.dataset.time) - 5);
+    }
   }
 
   private setView(v: View) {

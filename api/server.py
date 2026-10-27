@@ -20,7 +20,7 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -28,6 +28,9 @@ sys.path.insert(0, str(ROOT))
 from pitchlens_agents.agents import explain  # noqa: E402
 from pitchlens_agents.match import dataset_match, demo_match  # noqa: E402
 from pitchlens_agents.request import BadRequest, dataset_key, parse_request  # noqa: E402
+from pitchlens_agents.tools import build_match_report  # noqa: E402
+from pitchlens_agents.report_tex import render_tex  # noqa: E402
+from pitchlens_agents.report_pdf import render_pdf  # noqa: E402
 
 STATIC = ROOT / "static"
 ON_AZURE = bool(os.environ.get("WEBSITE_SITE_NAME"))
@@ -89,6 +92,46 @@ class Handler(BaseHTTPRequestHandler):
         self._json(result, 200)
 
     def do_GET(self):
+        parsed = urlsplit(self.path)
+        if parsed.path == "/api/report":
+            query = parse_qs(parsed.query)
+            try:
+                match = dataset_match(query.get("dataset", ["demo"])[0])
+                return self._json(build_match_report(match), 200)
+            except (ValueError, FileNotFoundError):
+                return self._json({"status": "error", "message": "dataset is not available"}, 400)
+        if parsed.path == "/api/report.tex":
+            query = parse_qs(parsed.query)
+            try:
+                match = dataset_match(query.get("dataset", ["demo"])[0])
+                dataset = query.get("dataset", ["demo"])[0]
+                raw = render_tex(build_match_report(match)).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/x-tex; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="pitchlens-{dataset}.tex"')
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            except (ValueError, FileNotFoundError):
+                return self._json({"status": "error", "message": "dataset is not available"}, 400)
+        if parsed.path == "/api/report.pdf":
+            query = parse_qs(parsed.query)
+            try:
+                match = dataset_match(query.get("dataset", ["demo"])[0])
+                dataset = query.get("dataset", ["demo"])[0]
+                raw = render_pdf(build_match_report(match))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Disposition", f'attachment; filename="pitchlens-{dataset}.pdf"')
+                self.send_header("Content-Length", str(len(raw)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            except (ValueError, FileNotFoundError):
+                return self._json({"status": "error", "message": "dataset is not available"}, 400)
         self._static(head=False)
 
     def do_HEAD(self):
