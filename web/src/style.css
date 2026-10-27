@@ -200,6 +200,12 @@ svg {
   flex-direction: column;
   gap: 2px;
   padding: 4px;
+  transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Rise with the minimap when the possession chart opens. */
+body.momentum-open #tools {
+  transform: translateY(calc(-50% - 114px));
 }
 
 #tools button {
@@ -599,12 +605,13 @@ svg {
   }
   body.momentum-open #tools {
     bottom: 340px;
+    transform: none;
   }
   body.momentum-open #momentumChart {
     height: 180px;
     padding: 8px 10px 6px;
   }
-  #momentumLegend {
+  .mc-side {
     display: none;
   }
   #momentumBtn {
@@ -820,12 +827,25 @@ body.momentum-open #momentumChart {
   -webkit-backdrop-filter: blur(10px);
 }
 
-.mc-head {
+.mc-side {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 24px;
+  z-index: 3;
+  /* Match the black left gutter; leave a strip for the Y tick labels. */
+  width: calc(var(--plot-left) - 44px);
+  max-width: calc(var(--plot-left) - 44px);
+  padding: 0 8px 0 2px;
+  box-sizing: border-box;
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 #momentumTitle {
@@ -833,31 +853,22 @@ body.momentum-open #momentumChart {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0;
-}
-
-#momentumSub {
-  margin: 2px 0 0;
-  font-size: 12px;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: auto;
 }
 
 #momentumLegend {
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 10px 14px;
   align-items: center;
-  flex: none;
-  font: 600 12px var(--display);
+  justify-content: center;
+  font: 700 13px var(--display);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--muted);
-}
-
-#momentumLegend i {
-  display: inline-block;
-  width: 18px;
-  height: 10px;
-  border-radius: 2px;
-  margin-right: 6px;
-  vertical-align: middle;
 }
 
 .mc-body {
@@ -917,6 +928,7 @@ body.momentum-open #momentumChart {
   bottom: 20px;
   cursor: pointer;
   touch-action: none;
+  overflow: visible;
 }
 
 #momentumSvg {
@@ -968,6 +980,7 @@ body.momentum-open #momentumChart {
 .mc-peaks {
   position: absolute;
   inset: 0;
+  overflow: visible;
   pointer-events: none;
 }
 

@@ -65,7 +65,8 @@ const ease = (a: number) => (a < 0.5 ? 2 * a * a : 1 - (-2 * a + 2) ** 2 / 2);
 
 const MOM_VW = 1000;
 const MOM_VH = 210;
-const MOM_YMAX = 1.05;
+/** Extra headroom so peak dots at ±1 stay inside the plot. */
+const MOM_YMAX = 1.18;
 const momX = (t: number, dur: number) => (t / Math.max(dur, 1e-6)) * MOM_VW;
 const momY = (v: number) => ((MOM_YMAX - v) / (2 * MOM_YMAX)) * MOM_VH;
 const momYPct = (v: number) => `${((MOM_YMAX - v) / (2 * MOM_YMAX)) * 100}%`;
@@ -420,10 +421,9 @@ class App {
     chart.style.setProperty("--ac", awayKit);
     $("#momentumTitle").textContent =
       `Possession dynamics — ${MOMENTUM_WINDOW_S} s window, sampled every ${MOMENTUM_STEP_S} s · ${series.length} points`;
-    $("#momentumSub").textContent = `+1 = full ${home.short} control  ·  −1 = full ${away.short} control`;
     $("#momentumLegend").innerHTML =
-      `<span><i style="background:${homeKit}"></i>${esc(home.short)} controls</span>` +
-      `<span><i style="background:${awayKit}"></i>${esc(away.short)} controls</span>`;
+      `<span style="color:${homeKit}">${esc(home.short)}</span>` +
+      `<span style="color:${awayKit}">${esc(away.short)}</span>`;
 
     const yBox = $("#momentumY");
     yBox.replaceChildren();
@@ -560,6 +560,8 @@ class App {
     const right = Math.max(4, br.right - tr.right);
     chart.style.setProperty("--plot-left", `${left}px`);
     chart.style.setProperty("--plot-right", `${right}px`);
+    // Side copy only when the left gutter is wide enough to read.
+    $(".mc-side").hidden = left < 120;
   }
 
   private replayMomentumDraw() {

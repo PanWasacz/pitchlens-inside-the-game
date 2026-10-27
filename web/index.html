@@ -117,14 +117,11 @@
     <canvas id="minimap" class="panel"></canvas>
 
     <div id="momentumChart" class="panel" aria-hidden="true">
-      <div class="mc-head">
-        <div>
-          <h2 id="momentumTitle">Possession dynamics</h2>
-          <p id="momentumSub" class="muted"></p>
-        </div>
-        <div id="momentumLegend"></div>
-      </div>
       <div class="mc-body">
+        <div class="mc-side">
+          <h2 id="momentumTitle">Possession dynamics</h2>
+          <div id="momentumLegend"></div>
+        </div>
         <div id="momentumY" class="mc-y"></div>
         <div id="momentumPlot" class="mc-plot">
           <svg id="momentumSvg" viewBox="0 0 1000 210" preserveAspectRatio="none"></svg>
