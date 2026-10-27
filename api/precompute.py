@@ -66,8 +66,9 @@ def main() -> None:
     reqs = [r for r in requests(args.teams) if r["task"] != "recap" or r["t"] % args.recap_every == 0]
     # The demo video's personalisation: the 03:32 offside for an away fan in PL and ES.
     offside = next(e["t"] for e in m.key_moments() if e["type"] == "offside")
-    for lang in ("pl", "es"):
-        reqs.append({"task": "moment", "t": offside, "event_id": None, "mode": "fan", "lang": lang, "team": "away", "player": None, "zones": []})
+    video = [{"task": "moment", "t": offside, "event_id": None, "mode": "fan", "lang": lang, "team": "away", "player": None, "zones": []} for lang in ("pl", "es")]
+    first = lambda r: (r["t"] == offside and r["task"] == "moment") or (r["task"] == "recap" and r["t"] == m.duration)  # noqa: E731
+    reqs = video + [r for r in reqs if first(r)] + [r for r in reqs if not first(r)]
     print(f"{len(reqs)} answers to generate with {args.workers} workers...")
     path = DATA_DIR / "precomputed.json"
     done: dict = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
