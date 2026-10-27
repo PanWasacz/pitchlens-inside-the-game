@@ -14,7 +14,7 @@ from collections import OrderedDict
 from . import fallback
 from .llm import LLM, Budget, LLMError
 from .match import Match, clock, demo_match
-from .tools import TOOL_SCHEMAS, Fact, FactStore, match_context, player_index, run_tool
+from .tools import TOOL_SCHEMAS, Fact, FactStore, match_context, player_index, run_tool, top_player
 from .verify import Evidence, check_sentences, check_text
 
 MAX_TOOL_CALLS = 6
@@ -27,6 +27,17 @@ CACHE_SIZE = 256
 
 
 # ---------------------------------------------------------------- moment
+
+
+def recap_moment(m: Match, t: float) -> dict:
+    """The match so far, from kick-off until t."""
+    score = m.score_at(t)
+    leader = "home" if score["home"] > score["away"] else "away" if score["away"] > score["home"] else None
+    return {
+        "type": "recap", "event_id": None, "t": t, "clock": clock(t), "analysis_t": t,
+        "team": leader, "team_short": m.short(leader), "defending": "home",
+        "player_id": top_player(m, t), "names": {}, "benefits": m.short(leader), "window": [0.0, t],
+    }
 
 
 def resolve_moment(m: Match, t: float, event_id: int | None = None) -> dict:
@@ -73,6 +84,11 @@ def resolve_moment(m: Match, t: float, event_id: int | None = None) -> dict:
 def plan_tools(moment: dict) -> list[tuple[str, dict]]:
     """Deterministic tool plan, used by the template Analyst and to top up the model's picks."""
     t = moment["analysis_t"]
+    if moment["type"] == "recap":
+        plan = [("get_momentum", {"t_from": 0.0, "t_to": t})] if t >= 60 else []
+        if moment["player_id"]:
+            plan.append(("get_player_stats", {"player_id": moment["player_id"], "t": t}))
+        return plan
     if moment["type"] == "offside":
         return [
             ("get_offside_state", {"t": t, "defending": moment["defending"]}),
@@ -85,10 +101,14 @@ def plan_tools(moment: dict) -> list[tuple[str, dict]]:
             ("get_team_shape", {"team": "home", "t": t}),
             ("get_team_shape", {"team": "away", "t": t}),
         ]
-    return [
+    plan = [
         ("get_team_shape", {"team": moment["defending"], "t": max(0.0, t - 2)}),
         ("get_player_stats", {"player_id": moment["player_id"], "t": t}),
     ]
+    if moment["type"] == "goal" and t >= 90:
+        # Who controlled the build-up: control vs chaos before the goal.
+        plan.append(("get_momentum", {"t_from": t - 180, "t_to": t}))
+    return plan
 
 
 def moment_brief(m: Match, moment: dict) -> dict:
@@ -130,8 +150,11 @@ Find out WHAT happened in one key moment of a synthetic match, using the tools.
 - Tools compute all numbers. Never compute or guess numbers yourself.
 - Make at most {max_calls} tool calls in total; call several in one turn when you can.
 - Useful choices: get_offside_state at the pass time for offsides; get_team_shape of the
-  defending team just before a shot; get_player_stats for the main player; get_possession
-  for open play; get_zone_activity for zones the pundit drew.
+  defending team just before a shot; get_player_stats for the main player; get_momentum
+  for who controlled the build-up (control vs chaos); get_possession for open play;
+  get_zone_activity for zones the pundit drew.
+- For type "recap" (the match so far): get_match_summary is already given; add
+  get_momentum over the whole match and get_player_stats for the decisive players.
 - Do not write a narrative.
 When done, reply with JSON only:
 {{"key_facts": ["f1", "..."], "finding": "one short English sentence: what happened"}}
@@ -139,6 +162,8 @@ key_facts: the 3 to 6 fact ids that best explain the moment."""
 
 EXPLAINER_SYSTEM = """You are the Explainer agent of PitchLens. Using ONLY the facts given, explain in
 2 to 4 English sentences WHY this moment matters (cause and effect, tactics).
+If the moment type is "recap", instead tell the story of the match so far in 3 to 5
+sentences: the score, the turning points with their times, who controlled play and why.
 Rules:
 - Every sentence cites the ids of the facts it uses.
 - Every number, time (mm:ss) and player name must appear in the cited facts. You may
@@ -269,7 +294,7 @@ def explainer(llm: LLM, budget: Budget, moment_info: dict, facts: list[Fact], pr
     ]
     if not sentences:
         raise LLMError("Explainer returned no sentences")
-    return sentences[:4]
+    return sentences[: 5 if moment_info.get("type") == "recap" else 4]
 
 
 def logic_check(llm: LLM, budget: Budget, facts: list[Fact], sentences: list[dict]) -> list[dict]:
@@ -331,13 +356,17 @@ def explain(req: dict, m: Match | None = None, llm: LLM | None = None) -> dict:
 
     budget = Budget(REQUEST_BUDGET_S)
     trace = Trace()
-    moment = resolve_moment(m, req["t"], req.get("event_id"))
+    recap = req.get("task") == "recap"
+    moment = recap_moment(m, req["t"]) if recap else resolve_moment(m, req["t"], req.get("event_id"))
     audience = {"mode": req["mode"], "lang": req["lang"], "team_short": m.short(req.get("team"))}
     store = FactStore()
     ctx_data, ctx_label = match_context(m, moment["analysis_t"])
     context = store.add("match_context", {"t": moment["analysis_t"]}, ctx_data, ctx_label, moment["analysis_t"])
     w = moment["window"]
-    run_tool(m, store, "get_events", {"t_from": w[0], "t_to": w[1]}, moment["t"])
+    if recap:
+        run_tool(m, store, "get_match_summary", {"t": moment["t"]}, moment["t"])
+    else:
+        run_tool(m, store, "get_events", {"t_from": w[0], "t_to": w[1]}, moment["t"])
 
     # 1. Analyst: what happened
     picked = analyst(m, llm, budget, moment, store, req.get("zones", []), trace)

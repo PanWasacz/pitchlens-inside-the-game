@@ -254,9 +254,15 @@ svg {
   margin: 0 0 6px;
 }
 
-#insights #explain {
-  background: rgba(255, 255, 255, 0.1);
+.ai-actions {
+  display: flex;
+  gap: 6px;
   margin: 6px 0 10px;
+}
+
+.ai-actions button {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 #insights h2:not(:first-child) {
@@ -616,7 +622,7 @@ svg {
   background: rgba(255, 255, 255, 0.06);
 }
 
-#insights #explain:disabled {
+.ai-actions button:disabled {
   opacity: 0.55;
   cursor: progress;
 }
@@ -726,4 +732,43 @@ svg {
   margin: 4px 0 0;
   padding-left: 16px;
   color: var(--muted);
+}
+
+/* ------------------------------------------------------------ momentum strip */
+
+#momentum {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  height: 22px;
+  pointer-events: none;
+}
+
+#momentum::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+#momentum .bar {
+  position: absolute;
+  height: var(--h);
+  padding: 0 1px;
+  background-clip: content-box;
+  background-color: var(--c);
+  opacity: 0.75;
+}
+
+#momentum .bar.up {
+  bottom: 50%;
+  border-radius: 2px 2px 0 0;
+}
+
+#momentum .bar.down {
+  top: 50%;
+  border-radius: 0 0 2px 2px;
 }

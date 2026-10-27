@@ -39,6 +39,16 @@ T = {
         "title_shot": "Shot: {shooter}",
         "title_offside": "Offside: {receiver}",
         "title_open_play": "Open play at {clock}",
+        "recap_score": "After {clock} the score is {score}.",
+        "recap_goals": "Goals: {goals}.",
+        "recap_chances": "Shots: {home} {home_shots} ({home_xg} xG), {away} {away_shots} ({away_xg} xG).",
+        "recap_possession": "{team} have had {pct}% of the ball and completed {acc}% of their passes.",
+        "recap_swing": "The biggest swing came at {at}, when {team} took control.",
+        "recap_star": "Goals for {player}: {goals}, with {km} km covered.",
+        "build_up": "{team} controlled the build-up, with a control index of {ctrl} since {since}.",
+        "fan_recap": "It's {score} after {clock}!",
+        "even": "Still all to play for, {fav} fans.",
+        "title_recap": "Recap at {clock}",
     },
     "pl": {
         "goal": "{scorer} ({team}) strzela gola w {clock}, jest {score}; szansa była warta {xg_pct}% xG.",
@@ -70,6 +80,16 @@ T = {
         "title_shot": "Strzał: {shooter}",
         "title_offside": "Spalony: {receiver}",
         "title_open_play": "Gra w {clock}",
+        "recap_score": "Po {clock} jest {score}.",
+        "recap_goals": "Gole: {goals}.",
+        "recap_chances": "Strzały: {home} {home_shots} ({home_xg} xG), {away} {away_shots} ({away_xg} xG).",
+        "recap_possession": "{team} ma {pct}% posiadania piłki i {acc}% celnych podań.",
+        "recap_swing": "Największy zwrot nastąpił w {at}, gdy kontrolę przejęła drużyna {team}.",
+        "recap_star": "{player}: gole {goals}, przebiegnięte {km} km.",
+        "build_up": "Akcję przygotowała przewaga {team}: indeks kontroli {ctrl} od {since}.",
+        "fan_recap": "Jest {score} po {clock}!",
+        "even": "Wszystko jeszcze możliwe, kibice {fav}!",
+        "title_recap": "Podsumowanie, {clock}",
     },
     "es": {
         "goal": "{scorer} marca para {team} en el {clock}, {score}; la ocasión valía un {xg_pct}% de xG.",
@@ -101,6 +121,16 @@ T = {
         "title_shot": "Disparo: {shooter}",
         "title_offside": "Fuera de juego: {receiver}",
         "title_open_play": "Juego en el {clock}",
+        "recap_score": "Tras {clock}, el marcador es {score}.",
+        "recap_goals": "Goles: {goals}.",
+        "recap_chances": "Disparos: {home} {home_shots} ({home_xg} xG), {away} {away_shots} ({away_xg} xG).",
+        "recap_possession": "{team} ha tenido el {pct}% del balón y ha acertado el {acc}% de sus pases.",
+        "recap_swing": "El mayor cambio llegó en el {at}, cuando {team} tomó el control.",
+        "recap_star": "Goles de {player}: {goals}, con {km} km recorridos.",
+        "build_up": "{team} dominó la jugada previa, con un índice de control de {ctrl} desde el {since}.",
+        "fan_recap": "¡{score} tras {clock}!",
+        "even": "¡Todo por decidir, afición de {fav}!",
+        "title_recap": "Resumen, {clock}",
     },
 }
 
@@ -158,6 +188,11 @@ def build_points(moment: dict, store: FactStore) -> list[dict]:
         if shape:
             d = shape.data
             add("def_line", [shape], def_team=d["team"], line=d["defensive_line_m_from_own_goal"], length=d["block_length_m"])
+        momentum = _find(store, "get_momentum")
+        if momentum and kind == "goal":
+            ctrl = momentum.data.get(f"{moment['team_short']}_control_overall", 0)
+            if ctrl >= 55:
+                add("build_up", [momentum], team=moment["team_short"], ctrl=ctrl, since=momentum.data["from"])
         stats = _find(store, "get_player_stats", player_id=moment["player_id"])
         if stats and kind != "goal":
             add("shooter_stats", [stats], shooter=stats.data["player"], shots=stats.data["shots"], top=stats.data["top_speed_kmh"])
@@ -171,6 +206,27 @@ def build_points(moment: dict, store: FactStore) -> list[dict]:
             add("offside_line", [state], def_team=state.data["defending"], second_last=state.data["second_last_defender"], line=state.data["line_m_from_defending_goal"])
             kind_key = "kind_through_lofted" if row.get("through_ball") and row.get("lofted") else "kind_through" if row.get("through_ball") else "kind_pass"
             add("offside_pass", [ev], kind=kind_key, length=row["length_m"])
+    elif kind == "recap":
+        summ = _find(store, "get_match_summary")
+        if summ is None:
+            return pts
+        d = summ.data
+        add("recap_score", [summ], clock=d["until"], score=d["score"])
+        if d["goals"]:
+            add("recap_goals", [summ], goals=", ".join(f"{g['scorer']} {g['clock']}" for g in d["goals"]))
+        h, a = d["home"], d["away"]
+        if h["shots"] + a["shots"]:
+            add("recap_chances", [summ], home=h["team"], home_shots=h["shots"], home_xg=h["xg"], away=a["team"], away_shots=a["shots"], away_xg=a["xg"])
+        top = h if h["possession_pct"] >= a["possession_pct"] else a
+        if moment["t"] >= 60:
+            add("recap_possession", [summ], team=top["team"], pct=top["possession_pct"], acc=top["pass_accuracy_pct"])
+        momentum = _find(store, "get_momentum")
+        if momentum and "biggest_swing" in momentum.data:
+            sw = momentum.data["biggest_swing"]
+            add("recap_swing", [momentum], at=sw["at"], team=sw["towards"])
+        stats = _find(store, "get_player_stats", player_id=moment["player_id"]) if moment["player_id"] else None
+        if stats and stats.data.get("goals"):
+            add("recap_star", [stats], player=stats.data["player"], goals=stats.data["goals"], km=stats.data["distance_km"])
     else:
         poss = _find(store, "get_possession")
         if poss:
@@ -203,7 +259,7 @@ def personalize(points: list[dict], moment: dict, audience: dict, fav_stats: Fac
     names = moment["names"]
     if audience["mode"] == "fan" and points:
         first = points[0]
-        fan_key = {"goal": "fan_goal", "save": "fan_save", "shot": "fan_shot", "offside": "fan_offside"}.get(moment["type"], "fan_open")
+        fan_key = {"goal": "fan_goal", "save": "fan_save", "shot": "fan_shot", "offside": "fan_offside", "recap": "fan_recap"}.get(moment["type"], "fan_open")
         values = {**names, **{k: _num(v, lang) for k, v in first["p"].items() if k != "kind"}}
         values.setdefault("team", moment.get("team_short") or "")
         parts = [t[fan_key].format(**values)]
@@ -211,7 +267,8 @@ def personalize(points: list[dict], moment: dict, audience: dict, fav_stats: Fac
         parts = [render_point(pt, lang) for pt in points]
     fav_team = audience.get("team_short")
     if fav_team:
-        parts.append(t["good" if moment.get("benefits") == fav_team else "bad"].format(fav=fav_team))
+        verdict = "even" if not moment.get("benefits") else "good" if moment["benefits"] == fav_team else "bad"
+        parts.append(t[verdict].format(fav=fav_team))
     if fav_stats is not None:
         d = fav_stats.data
         if audience["mode"] == "fan":

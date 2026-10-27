@@ -1,4 +1,4 @@
-import { drawDistances, drawFormation, drawOffside } from "./analysis";
+import { drawDistances, drawFormation, drawOffside, momentumSpells } from "./analysis";
 import { BlendCamera, TopCamera, TvCamera, VideoCamera, type Camera } from "./camera";
 import { DATASETS, datasetAvailable, loadMatch, type Dataset, type Match, type MatchEvent, type TeamKey } from "./data";
 import { Drawings, type Tool } from "./drawings";
@@ -151,7 +151,8 @@ class App {
       panel.hidden = !panel.hidden;
       $("#insightsBtn").setAttribute("aria-pressed", String(!panel.hidden));
     };
-    $("#explain").onclick = () => this.explain();
+    $("#explain").onclick = () => this.explain("moment");
+    $("#recap").onclick = () => this.explain("recap");
     for (const b of $$<HTMLButtonElement>("[data-audience]")) {
       b.onclick = () => {
         this.audience = b.dataset.audience as Audience;
@@ -230,6 +231,26 @@ class App {
     return p ? p.label : "";
   }
 
+  /** Control vs chaos strip above the timeline: bars up for home control, down for away. */
+  private buildMomentum() {
+    const spells = momentumSpells(this.match);
+    const strip = $("#momentum");
+    strip.hidden = !spells.length;
+    const { home, away } = this.match.meta.teams;
+    const dur = this.match.duration;
+    for (const sp of spells) {
+      const diff = sp.home - sp.away;
+      const bar = document.createElement("div");
+      bar.className = `bar ${diff >= 0 ? "up" : "down"}`;
+      bar.style.left = `${(sp.t0 / dur) * 100}%`;
+      bar.style.width = `${((sp.t1 - sp.t0) / dur) * 100}%`;
+      bar.style.setProperty("--h", `${Math.min(1, Math.abs(diff) / 60) * 50}%`);
+      bar.style.setProperty("--c", (diff >= 0 ? home : away).colors.primary);
+      strip.append(bar);
+    }
+    strip.title = `Momentum: control index per ${Math.round(spells[0]?.t1 ?? 30)} s, up = ${home.short}, down = ${away.short}`;
+  }
+
   private buildMoments() {
     const list = $("#moments");
     if (!this.keyMoments.length) {
@@ -267,6 +288,7 @@ class App {
           : `${fmtClock(e.t)}  ${outcome === "goal" ? "GOAL" : "Shot"} - ${this.playerName(e.player)} (${outcome.replace("_", " ")}${xg})`;
       markers.append(m);
     }
+    this.buildMomentum();
     const tl = $("#timeline");
     const seekTo = (ev: PointerEvent) => {
       const r = $("#track").getBoundingClientRect();
@@ -323,17 +345,18 @@ class App {
     return zones.slice(-3);
   }
 
-  private async explain() {
+  private async explain(task: "moment" | "recap") {
     const out = $("#explainOut");
     if (this.match.meta.source !== "synthetic") {
       out.innerHTML = `<p class="muted">The AI analyst runs on the synthetic demo match.</p>`;
       return;
     }
     const ticket = ++this.explaining;
-    const btn = $<HTMLButtonElement>("#explain");
-    btn.disabled = true;
+    const btn = $<HTMLButtonElement>(task === "recap" ? "#recap" : "#explain");
+    for (const b of $$<HTMLButtonElement>("#explain, #recap")) b.disabled = true;
     out.innerHTML = `<p class="muted ai-wait">Analyst → Explainer → Verifier → Personalizer…</p>`;
     const body = {
+      task,
       t: this.t,
       mode: this.audience,
       team: $<HTMLSelectElement>("#aiTeam").value || null,
@@ -351,7 +374,7 @@ class App {
       failed = "The analyst service is not reachable.";
     }
     if (ticket !== this.explaining) return;
-    btn.disabled = false;
+    for (const b of $$<HTMLButtonElement>("#explain, #recap")) b.disabled = false;
     if (failed || !data) {
       out.innerHTML = `<p class="muted">${esc(failed)}</p>`;
       return;

@@ -88,6 +88,29 @@ class Fallback(unittest.TestCase):
         self.assertLessEqual(len(numbers_in(r["text"])[0]), 1)
 
 
+class Recap(unittest.TestCase):
+    def test_momentum_and_summary(self):
+        from pitchlens_agents.tools import get_match_summary, get_momentum
+
+        summary, _ = get_match_summary(M, 600)
+        self.assertEqual(summary["score"], "NBR 2-2 KBA")
+        self.assertEqual(len(summary["goals"]), 4)
+        mom, _ = get_momentum(M, 0, 600)
+        self.assertEqual(mom["NBR_control_overall"] + mom["KBA_control_overall"], 100)
+        self.assertLessEqual(len(mom["spells"]), 10)
+        with self.assertRaises(ValueError):
+            get_momentum(M, 10, 20)
+
+    def test_recap_all_languages(self):
+        for t in (5.0, 300.0, 600.0):
+            for mode in ("analyst", "fan"):
+                for lang in ("en", "pl", "es"):
+                    r = agents.explain({"task": "recap", "t": t, "mode": mode, "lang": lang, "team": "away", "player": None, "zones": []}, M, LLM())
+                    self.assertEqual(r["moment"]["type"], "recap")
+                    self.assertTrue(r["text"])
+                    self.assertNotIn("dropped", [s["status"] for s in r["trace"]])
+
+
 class ScriptedLLM(LLM):
     """Plays the four agents; the first Explainer draft contains a wrong number."""
 

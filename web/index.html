@@ -85,7 +85,10 @@
           <option value="es">ES</option>
         </select>
       </div>
-      <button id="explain">Explain this moment</button>
+      <div class="ai-actions">
+        <button id="explain">Explain this moment</button>
+        <button id="recap" title="The match so far, up to the current time">Recap so far</button>
+      </div>
       <div id="explainOut" aria-live="polite"></div>
     </aside>
 
@@ -127,6 +130,7 @@
       <div id="clock">00:00</div>
       <div id="timeline">
         <div id="track">
+          <div id="momentum" hidden></div>
           <div id="progress"></div>
           <div id="markers"></div>
           <div id="playhead"></div>

@@ -170,3 +170,43 @@ export function drawDistances(ctx: CanvasRenderingContext2D, cam: Camera, match:
   }
   ctx.restore();
 }
+
+export interface Spell {
+  t0: number;
+  t1: number;
+  /** Control index 0-100 per team (same formula as the API's get_momentum tool). */
+  home: number;
+  away: number;
+}
+
+/**
+ * Control vs chaos per spell: 50% possession, 30% territory (ball in the opponents'
+ * half), 20% share of chance quality (xG). Empty when the source has no possession.
+ */
+export function momentumSpells(match: Match, step = 30): Spell[] {
+  const out: Spell[] = [];
+  const shots = match.events.filter((e) => e.type === "shot" && typeof e.xg === "number");
+  const homeDir = match.attackDir("home");
+  let anyPossession = false;
+  for (let t0 = 0; t0 < match.duration - 1e-6; t0 += step) {
+    const t1 = Math.min(t0 + step, match.duration);
+    const poss = { home: 0, away: 0 };
+    const terr = { home: 0, away: 0 };
+    for (let t = t0; t < t1; t += 0.5) {
+      const s = match.sample(t);
+      if (s.possession) {
+        poss[s.possession]++;
+        anyPossession = true;
+      }
+      if (s.ball.visible) terr[(s.ball.x - L / 2) * homeDir > 0 ? "home" : "away"]++;
+    }
+    const xg = { home: 0, away: 0 };
+    for (const e of shots) if (e.t >= t0 && e.t < t1 && e.team) xg[e.team] += e.xg as number;
+    const pt = Math.max(1, poss.home + poss.away);
+    const tt = Math.max(1, terr.home + terr.away);
+    const xt = xg.home + xg.away;
+    const ctrl = (k: TeamKey) => 0.5 * (100 * poss[k]) / pt + 0.3 * (100 * terr[k]) / tt + 0.2 * (xt > 0 ? (100 * xg[k]) / xt : 50);
+    out.push({ t0, t1, home: ctrl("home"), away: ctrl("away") });
+  }
+  return anyPossession ? out : [];
+}

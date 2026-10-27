@@ -5,6 +5,7 @@ from __future__ import annotations
 from .match import Match
 
 MODES = ("analyst", "fan")
+TASKS = ("moment", "recap")
 LANGS = ("en", "pl", "es")
 MAX_ZONES = 3
 
@@ -26,6 +27,9 @@ def parse_request(body, m: Match) -> dict:
     event_id = body.get("event_id")
     if event_id is not None and (isinstance(event_id, bool) or not isinstance(event_id, int)):
         raise BadRequest("event_id must be an integer")
+    task = body.get("task", "moment")
+    if task not in TASKS:
+        raise BadRequest(f"task must be one of {', '.join(TASKS)}")
     mode = body.get("mode", "analyst")
     lang = body.get("lang", "en")
     team = body.get("team") or None
@@ -46,4 +50,4 @@ def parse_request(body, m: Match) -> dict:
         clamp_x = lambda v: round(min(max(v, 0.0), m.length), 1)  # noqa: E731
         clamp_y = lambda v: round(min(max(v, 0.0), m.width), 1)  # noqa: E731
         zones.append({"x0": clamp_x(x0), "y0": clamp_y(y0), "x1": clamp_x(x1), "y1": clamp_y(y1)})
-    return {"t": round(t, 1), "event_id": event_id, "mode": mode, "lang": lang, "team": team, "player": player, "zones": zones}
+    return {"task": task, "t": round(t, 1), "event_id": event_id, "mode": mode, "lang": lang, "team": team, "player": player, "zones": zones}

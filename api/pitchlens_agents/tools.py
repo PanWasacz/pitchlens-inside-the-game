@@ -284,8 +284,150 @@ def get_zone_activity(m: Match, x0: float, y0: float, x1: float, y1: float, t_fr
     return data, f"Zone activity {data['from']}-{data['to']}"
 
 
+def _turnover_rate(m: Match) -> float:
+    """Possession changes per minute over the whole match (baseline for 'chaos')."""
+    n = sum(1 for e in m.events if e["type"] == "possession_change")
+    return n / max(1.0, m.duration / 60)
+
+
+def get_momentum(m: Match, t_from: float, t_to: float) -> tuple[dict, str]:
+    """Control vs chaos: who controlled each spell (possession, territory, chances)
+    and how often the ball changed hands."""
+    t_from, t_to = sorted((float(t_from), float(t_to)))
+    t_from = max(0.0, t_from)
+    span = t_to - t_from
+    if span < 30:
+        raise ValueError("window must be at least 30 s")
+    step = 30.0 if span <= 240 else 60.0 if span <= 720 else 120.0
+    hs, as_ = m.short("home"), m.short("away")
+    base = _turnover_rate(m)
+    rows = []
+    totals = {"home": 0.0, "away": 0.0}
+    t = t_from
+    while t < t_to - 1e-6:
+        end = min(t + step, t_to)
+        a, b = m.frame_index(t), m.frame_index(end)
+        frames = m.frames[a : b + 1]
+        poss = {"home": 0, "away": 0}
+        terr = {"home": 0, "away": 0}
+        for fr in frames:
+            if fr.get("possession") in poss:
+                poss[fr["possession"]] += 1
+            bx = fr["ball"]["x"]
+            terr["home" if bx > m.length / 2 else "away"] += 1
+        evs = [e for e in m.events if t <= e["t"] < end]
+        xg = {"home": 0.0, "away": 0.0}
+        for e in evs:
+            if e["type"] == "shot" and e.get("team") in xg:
+                xg[e["team"]] += e["xg"]
+        turnovers = sum(1 for e in evs if e["type"] == "possession_change")
+        pt = max(1, poss["home"] + poss["away"])
+        tt = max(1, terr["home"] + terr["away"])
+        xt = xg["home"] + xg["away"]
+        control = {}
+        for k in ("home", "away"):
+            chance = 100 * xg[k] / xt if xt > 0 else 50.0
+            control[k] = 0.5 * 100 * poss[k] / pt + 0.3 * 100 * terr[k] / tt + 0.2 * chance
+            totals[k] += control[k] * (end - t)
+        rate = turnovers / max(0.5, (end - t) / 60)
+        diff = control["home"] - control["away"]
+        label = "chaotic" if rate >= 1.5 * base else f"{hs} control" if diff >= 15 else f"{as_} control" if diff <= -15 else "balanced"
+        rows.append({
+            "from": clock(t),
+            "to": clock(end),
+            f"{hs}_control": round(control["home"]),
+            f"{as_}_control": round(control["away"]),
+            "turnovers_per_min": r1(rate),
+            "label": label,
+        })
+        t = end
+    swing = None
+    for prev, cur in zip(rows, rows[1:]):
+        delta = cur[f"{hs}_control"] - prev[f"{hs}_control"]
+        if swing is None or abs(delta) > abs(swing[0]):
+            swing = (delta, cur)
+    overall_home = round(totals["home"] / span)
+    data = {
+        "from": clock(t_from),
+        "to": clock(t_to),
+        "spell_length_s": int(step),
+        f"{hs}_control_overall": overall_home,
+        f"{as_}_control_overall": 100 - overall_home,
+        "match_avg_turnovers_per_min": r1(base),
+        "spells": rows[-10:],
+    }
+    if swing and abs(swing[0]) >= 15:
+        data["biggest_swing"] = {
+            "at": swing[1]["from"],
+            "towards": hs if swing[0] > 0 else as_,
+            "control_change": abs(swing[0]),
+        }
+    leader = hs if overall_home >= 55 else as_ if overall_home <= 45 else "neither team"
+    return data, f"Momentum {data['from']}-{data['to']}: {leader} in control"
+
+
+def get_match_summary(m: Match, t: float) -> tuple[dict, str]:
+    """Score, goals and team totals from kick-off until t."""
+    t = float(t)
+    evs = [e for e in m.events if e["t"] <= t]
+    score = m.score_at(t)
+    teams = {}
+    for k in ("home", "away"):
+        shots = [e for e in evs if e["type"] == "shot" and e.get("team") == k]
+        passes = [e for e in evs if e["type"] == "pass" and e.get("team") == k]
+        done = sum(1 for e in passes if e.get("outcome") == "complete")
+        teams[k] = {
+            "team": m.short(k),
+            "goals": score[k],
+            "shots": len(shots),
+            "shots_on_target": sum(1 for e in shots if e.get("outcome") in ("goal", "saved")),
+            "xg": round(sum(e["xg"] for e in shots), 2),
+            "passes": len(passes),
+            "pass_accuracy_pct": round(100 * done / len(passes)) if passes else 0,
+            "tackles_won": sum(1 for e in evs if e["type"] == "tackle" and e.get("team") == k and e.get("outcome") == "won"),
+            "interceptions": sum(1 for e in evs if e["type"] == "interception" and e.get("team") == k),
+            "offsides": sum(1 for e in evs if e["type"] == "offside" and e.get("team") == k),
+        }
+    a, b = 0, m.frame_index(t)
+    counts = {"home": 0, "away": 0}
+    for fr in m.frames[a : b + 1]:
+        if fr.get("possession") in counts:
+            counts[fr["possession"]] += 1
+    total = max(1, counts["home"] + counts["away"])
+    for k in ("home", "away"):
+        teams[k]["possession_pct"] = round(100 * counts[k] / total)
+    goals = [
+        {"clock": clock(e["t"]), "team": m.short(e["team"]), "scorer": m.name(e["scorer"]), "assist": m.name(e.get("assist"))}
+        for e in evs
+        if e["type"] == "goal"
+    ]
+    last = m.frame_at(t)
+    runner = max(last["players"], key=lambda q: q["dist"])
+    data = {
+        "until": clock(t),
+        "score": f"{m.short('home')} {score['home']}-{score['away']} {m.short('away')}",
+        "goals": [{k: v for k, v in g.items() if v is not None} for g in goals],
+        "home": teams["home"],
+        "away": teams["away"],
+        "most_distance": {"player": runner["name"], "team": m.short(runner["team"]), "distance_km": round(runner["dist"] / 1000, 2)},
+    }
+    return data, f"Match summary until {data['until']}: {data['score']}"
+
+
+def top_player(m: Match, t: float) -> str | None:
+    """Most decisive player so far: most goals, then most shots."""
+    tally: dict[str, tuple[int, int]] = {}
+    for e in m.events:
+        if e["t"] <= t and e["type"] == "shot" and e.get("player"):
+            g, s = tally.get(e["player"], (0, 0))
+            tally[e["player"]] = (g + (e.get("outcome") == "goal"), s + 1)
+    return max(tally, key=lambda pid: tally[pid]) if tally else None
+
+
 TOOLS = {
     "get_events": get_events,
+    "get_momentum": get_momentum,
+    "get_match_summary": get_match_summary,
     "get_player_stats": get_player_stats,
     "get_team_shape": get_team_shape,
     "get_offside_state": get_offside_state,
@@ -358,6 +500,30 @@ TOOL_SCHEMAS = [
                     "t": {"type": "number"},
                     "defending": {"type": "string", "enum": ["home", "away"]},
                 },
+                "required": ["t"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_momentum",
+            "description": "Control vs chaos between two times: per spell, a 0-100 control index per team (possession, territory, chance quality), turnovers per minute, labels (control / balanced / chaotic) and the biggest swing.",
+            "parameters": {
+                "type": "object",
+                "properties": {"t_from": {"type": "number"}, "t_to": {"type": "number"}},
+                "required": ["t_from", "t_to"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_match_summary",
+            "description": "Score, goals (clock, scorer, assist) and team totals (shots, xG, possession, pass accuracy, tackles, offsides) from kick-off until time t.",
+            "parameters": {
+                "type": "object",
+                "properties": {"t": {"type": "number"}},
                 "required": ["t"],
             },
         },
