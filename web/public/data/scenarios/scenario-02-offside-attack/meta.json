@@ -15,9 +15,9 @@
       "short": "SLU",
       "formation": "4-3-3",
       "colors": {
-        "primary": "#F97316",
-        "secondary": "#FFF7ED",
-        "goalkeeper": "#38BDF8"
+        "primary": "#0F766E",
+        "secondary": "#A7F3D0",
+        "goalkeeper": "#F43F5E"
       },
       "attacks": "+x",
       "players": [
@@ -105,9 +105,9 @@
       "short": "EGB",
       "formation": "4-2-3-1",
       "colors": {
-        "primary": "#EC4899",
-        "secondary": "#500724",
-        "goalkeeper": "#A3E635"
+        "primary": "#7C2D12",
+        "secondary": "#FDBA74",
+        "goalkeeper": "#22D3EE"
       },
       "attacks": "-x",
       "players": [

@@ -15,9 +15,9 @@
       "short": "HCF",
       "formation": "4-2-3-1",
       "colors": {
-        "primary": "#8B5CF6",
-        "secondary": "#F5F3FF",
-        "goalkeeper": "#F59E0B"
+        "primary": "#111827",
+        "secondary": "#F59E0B",
+        "goalkeeper": "#FDE68A"
       },
       "attacks": "+x",
       "players": [
@@ -105,9 +105,9 @@
       "short": "RWA",
       "formation": "4-4-2",
       "colors": {
-        "primary": "#14B8A6",
-        "secondary": "#042F2E",
-        "goalkeeper": "#FDE047"
+        "primary": "#F8FAFC",
+        "secondary": "#DC2626",
+        "goalkeeper": "#7C3AED"
       },
       "attacks": "-x",
       "players": [

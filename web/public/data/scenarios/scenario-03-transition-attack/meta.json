@@ -15,9 +15,9 @@
       "short": "PCW",
       "formation": "4-4-2",
       "colors": {
-        "primary": "#2563EB",
-        "secondary": "#DBEAFE",
-        "goalkeeper": "#FACC15"
+        "primary": "#312E81",
+        "secondary": "#C4B5FD",
+        "goalkeeper": "#FB7185"
       },
       "attacks": "+x",
       "players": [
@@ -105,9 +105,9 @@
       "short": "GVS",
       "formation": "4-3-3",
       "colors": {
-        "primary": "#DC2626",
-        "secondary": "#FEF2F2",
-        "goalkeeper": "#34D399"
+        "primary": "#65A30D",
+        "secondary": "#1A2E05",
+        "goalkeeper": "#E879F9"
       },
       "attacks": "-x",
       "players": [
