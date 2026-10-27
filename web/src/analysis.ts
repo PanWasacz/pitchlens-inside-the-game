@@ -179,6 +179,17 @@ export interface Spell {
   away: number;
 }
 
+export interface MomentumPoint {
+  t: number;
+  /** Home possession share minus away, in [-1, 1]. */
+  v: number;
+}
+
+/** Rolling window and sample step used by the possession-dynamics chart.
+ *  15 s / 1 s on the 10-minute demo is proportional to a 60 s / 5 s half-length chart. */
+export const MOMENTUM_WINDOW_S = 15;
+export const MOMENTUM_STEP_S = 1;
+
 /**
  * Control vs chaos per spell: 50% possession, 30% territory (ball in the opponents'
  * half), 20% share of chance quality (xG). Empty when the source has no possession.
@@ -209,4 +220,105 @@ export function momentumSpells(match: Match, step = 30): Spell[] {
     out.push({ t0, t1, home: ctrl("home"), away: ctrl("away") });
   }
   return anyPossession ? out : [];
+}
+
+/**
+ * Rolling possession share for the area chart: +1 full home control, −1 full
+ * away. Empty when the source has no possession. Trailing `window` seconds,
+ * sampled every `step` seconds (defaults match a 60 s / ~5 s studio chart).
+ */
+export function momentumSeries(match: Match, window = MOMENTUM_WINDOW_S, step = MOMENTUM_STEP_S): MomentumPoint[] {
+  const dt = 0.5;
+  const n = Math.floor(match.duration / dt) + 1;
+  const home = new Uint8Array(n);
+  const away = new Uint8Array(n);
+  let any = false;
+  for (let i = 0; i < n; i++) {
+    const p = match.sample(i * dt).possession;
+    if (p === "home") {
+      home[i] = 1;
+      any = true;
+    } else if (p === "away") {
+      away[i] = 1;
+      any = true;
+    }
+  }
+  if (!any) return [];
+
+  const hPre = new Int32Array(n + 1);
+  const aPre = new Int32Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    hPre[i + 1] = hPre[i] + home[i];
+    aPre[i + 1] = aPre[i] + away[i];
+  }
+
+  const w = Math.max(1, Math.round(window / dt));
+  const out: MomentumPoint[] = [];
+  const push = (t: number) => {
+    const i1 = Math.max(1, Math.min(n, Math.round(t / dt) + 1));
+    const i0 = Math.max(0, i1 - w);
+    const h = hPre[i1] - hPre[i0];
+    const a = aPre[i1] - aPre[i0];
+    const tot = h + a;
+    out.push({ t, v: tot ? (h - a) / tot : 0 });
+  };
+  for (let t = 0; t < match.duration - 1e-6; t += step) push(t);
+  if (!out.length || out[out.length - 1].t < match.duration - 1e-6) push(match.duration);
+  return out;
+}
+
+/**
+ * Biggest possession peaks worth marking: local extrema by |v|, spaced apart,
+ * skipping the trailing-window ramp at kick-off.
+ */
+export function momentumPeaks(series: MomentumPoint[], limit = 8): MomentumPoint[] {
+  if (series.length < 8) return [];
+  const step = series.length > 1 ? series[1].t - series[0].t : 1;
+  const radius = Math.max(2, Math.round(12 / Math.max(step, 0.5)));
+  const t0 = MOMENTUM_WINDOW_S;
+  const t1 = series[series.length - 1].t - 8;
+  const cands: MomentumPoint[] = [];
+  for (let i = radius; i < series.length - radius; i++) {
+    const p = series[i];
+    if (p.t < t0 || p.t > t1) continue;
+    const v = p.v;
+    if (Math.abs(v) < 0.4) continue;
+    let extreme = true;
+    let drop = 0;
+    for (let k = i - radius; k <= i + radius; k++) {
+      if (k === i) continue;
+      const u = series[k].v;
+      drop = Math.max(drop, Math.abs(v - u));
+      if (v >= 0 && u > v) extreme = false;
+      if (v < 0 && u < v) extreme = false;
+    }
+    if (extreme && drop >= 0.22) cands.push(p);
+  }
+  cands.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+  const picked: MomentumPoint[] = [];
+  const minSep = 20;
+  for (const p of cands) {
+    if (picked.every((q) => Math.abs(q.t - p.t) >= minSep)) picked.push(p);
+    if (picked.length >= limit) break;
+  }
+  return picked.sort((a, b) => a.t - b.t);
+}
+
+/** Linear interpolation of the series at time t. */
+export function momentumAt(series: MomentumPoint[], t: number): number {
+  if (!series.length) return 0;
+  if (t <= series[0].t) return series[0].v;
+  const last = series[series.length - 1];
+  if (t >= last.t) return last.v;
+  let lo = 0;
+  let hi = series.length - 1;
+  while (hi - lo > 1) {
+    const m = (lo + hi) >> 1;
+    if (series[m].t <= t) lo = m;
+    else hi = m;
+  }
+  const a = series[lo];
+  const b = series[hi];
+  const span = b.t - a.t;
+  return span ? a.v + ((b.v - a.v) * (t - a.t)) / span : a.v;
 }

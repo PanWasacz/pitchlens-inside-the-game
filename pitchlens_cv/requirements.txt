@@ -1,7 +1,7 @@
 numpy>=1.26
 opencv-python>=4.9
 ultralytics>=8.3
-supervision>=0.25
+supervision>=0.25,<0.27  # ByteTrack (sv.ByteTrack) was removed in newer releases
 scikit-learn>=1.4
 gdown>=5.0
 git+https://github.com/roboflow/sports.git

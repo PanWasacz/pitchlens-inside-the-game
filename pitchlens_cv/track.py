@@ -18,6 +18,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import supervision as sv
+import torch
 from sklearn.cluster import KMeans
 from ultralytics import YOLO
 
@@ -83,7 +84,10 @@ def region_pixels(frame: np.ndarray, box: np.ndarray, top: float, bottom: float,
     return keep if len(keep) >= 8 else None
 
 
-def detect_and_track(video: Path, model: YOLO, imgsz: int, conf: float):
+def detect_and_track(video: Path, model: YOLO, imgsz: int, conf: float, device: str | None = None):
+    if device is None:  # auto: first CUDA GPU when available, otherwise CPU
+        device = "0" if torch.cuda.is_available() else "cpu"
+    print(f"device: {device} (cuda available: {torch.cuda.is_available()})")
     info = sv.VideoInfo.from_video_path(str(video))
     ids = class_ids(model)
     names = {v: k for k, v in ids.items()}
@@ -91,7 +95,9 @@ def detect_and_track(video: Path, model: YOLO, imgsz: int, conf: float):
     frames, features = [], []  # features: (object dict, Lab colour)
 
     for i, frame in enumerate(sv.get_video_frames_generator(str(video))):
-        result = model.predict(frame, imgsz=imgsz, conf=conf, device=0, half=True, verbose=False)[0]
+        # half=True (FP16) only works on CUDA; CPU runs full precision.
+        fp16 = {"half": True} if device != "cpu" else {}
+        result = model.predict(frame, imgsz=imgsz, conf=conf, device=device, verbose=False, **fp16)[0]
         det = sv.Detections.from_ultralytics(result)
         is_ball = det.class_id == ids["ball"]
         balls, people = det[is_ball], det[~is_ball]
@@ -212,11 +218,13 @@ def main() -> None:
     ap.add_argument("--imgsz", type=int, default=1920)
     ap.add_argument("--conf", type=float, default=0.25)
     ap.add_argument("--out", type=Path, default=Path("match/out"))
+    ap.add_argument("--device", default=None,
+                    help='override device, e.g. "cpu" or "0"; default: CUDA "0" if available, else CPU')
     args = ap.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
     model = YOLO(args.weights)
-    info, frames, features = detect_and_track(args.video, model, args.imgsz, args.conf)
+    info, frames, features = detect_and_track(args.video, model, args.imgsz, args.conf, args.device)
     assign_teams(frames, features, info.fps)
 
     with open(args.out / "tracks.jsonl", "w", encoding="utf-8", newline="\n") as fh:

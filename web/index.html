@@ -108,12 +108,35 @@
         <dt>O / D</dt><dd>Offside line / distances</dd>
         <dt>L</dt><dd>Live insight feed</dd>
         <dt>F</dt><dd>Player focus (selected player)</dd>
+        <dt>M</dt><dd>Possession dynamics chart</dd>
         <dt>Esc</dt><dd>Deselect players</dd>
         <dt>Wheel / pinch</dt><dd>Zoom the TV camera</dd>
       </dl>
     </div>
 
     <canvas id="minimap" class="panel"></canvas>
+
+    <div id="momentumChart" class="panel" aria-hidden="true">
+      <div class="mc-head">
+        <div>
+          <h2 id="momentumTitle">Possession dynamics</h2>
+          <p id="momentumSub" class="muted"></p>
+        </div>
+        <div id="momentumLegend"></div>
+      </div>
+      <div class="mc-body">
+        <div id="momentumY" class="mc-y"></div>
+        <div id="momentumPlot" class="mc-plot">
+          <svg id="momentumSvg" viewBox="0 0 1000 210" preserveAspectRatio="none"></svg>
+          <div id="momentumPeaks" class="mc-peaks"></div>
+          <div id="momentumHover" hidden></div>
+          <div id="momentumHead"></div>
+          <div id="momentumDot"></div>
+          <div id="momentumTip" hidden></div>
+        </div>
+        <div id="momentumX" class="mc-x"></div>
+      </div>
+    </div>
 
     <footer id="transport" class="panel">
       <button id="prevMoment" title="Previous key moment (Shift+←)">
@@ -134,12 +157,12 @@
       <div id="clock">00:00</div>
       <div id="timeline">
         <div id="track">
-          <div id="momentum" hidden></div>
           <div id="progress"></div>
           <div id="markers"></div>
           <div id="playhead"></div>
         </div>
       </div>
+      <button id="momentumBtn" aria-pressed="false" title="Possession dynamics (M)" hidden>Momentum</button>
       <button id="helpBtn" title="Shortcuts (?)">?</button>
     </footer>
 

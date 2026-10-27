@@ -154,7 +154,7 @@ def decompose(H: np.ndarray, lens: Lens) -> tuple[np.ndarray, np.ndarray] | None
 def detect(video: Path, model: YOLO) -> list[tuple[np.ndarray, np.ndarray]]:
     out = []
     for i, frame in enumerate(sv.get_video_frames_generator(str(video))):
-        r = model.predict(frame, device=0, verbose=False)[0]
+        r = model.predict(frame, verbose=False)[0]
         if r.keypoints is None or not len(r.keypoints.xy):
             out.append((np.zeros((32, 2)), np.zeros(32)))
         else:

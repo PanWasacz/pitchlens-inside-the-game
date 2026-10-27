@@ -1,4 +1,16 @@
-import { drawDistances, drawFormation, drawOffside, momentumSpells, type Spell } from "./analysis";
+import {
+  drawDistances,
+  drawFormation,
+  drawOffside,
+  momentumAt,
+  momentumPeaks,
+  momentumSeries,
+  momentumSpells,
+  MOMENTUM_STEP_S,
+  MOMENTUM_WINDOW_S,
+  type MomentumPoint,
+  type Spell,
+} from "./analysis";
 import { BlendCamera, TopCamera, TvCamera, VideoCamera, type Camera } from "./camera";
 import { DATASETS, datasetAvailable, loadMatch, type Dataset, type Match, type MatchEvent, type TeamKey } from "./data";
 import { Drawings, type Tool } from "./drawings";
@@ -51,6 +63,76 @@ function fmtClock(t: number): string {
 
 const ease = (a: number) => (a < 0.5 ? 2 * a * a : 1 - (-2 * a + 2) ** 2 / 2);
 
+const MOM_VW = 1000;
+const MOM_VH = 210;
+const MOM_YMAX = 1.05;
+const momX = (t: number, dur: number) => (t / Math.max(dur, 1e-6)) * MOM_VW;
+const momY = (v: number) => ((MOM_YMAX - v) / (2 * MOM_YMAX)) * MOM_VH;
+const momYPct = (v: number) => `${((MOM_YMAX - v) / (2 * MOM_YMAX)) * 100}%`;
+
+function fmtAxisMin(t: number): string {
+  const m = t / 60;
+  return Math.abs(m - Math.round(m)) < 1e-6 ? `${Math.round(m)}'` : `${m.toFixed(1)}'`;
+}
+
+function axisTimes(duration: number): number[] {
+  const minutes = duration / 60;
+  const step = minutes <= 12 ? 2 : minutes <= 30 ? 5 : 10;
+  const out: number[] = [];
+  for (let m = 0; m * 60 <= duration + 1e-6; m += step) out.push(m * 60);
+  if (out[out.length - 1] < duration - 0.5) out.push(duration);
+  return out;
+}
+
+function splitMomentum(series: MomentumPoint[]): { sign: 1 | -1; pts: MomentumPoint[] }[] {
+  if (!series.length) return [];
+  const segs: { sign: 1 | -1; pts: MomentumPoint[] }[] = [];
+  let sign: 1 | -1 = series[0].v >= 0 ? 1 : -1;
+  let pts: MomentumPoint[] = [series[0]];
+  const flush = () => {
+    if (pts.length) segs.push({ sign, pts });
+  };
+  for (let i = 1; i < series.length; i++) {
+    const a = series[i - 1];
+    const b = series[i];
+    const next: 1 | -1 = b.v > 0 ? 1 : b.v < 0 ? -1 : sign;
+    if (next === sign) {
+      pts.push(b);
+      continue;
+    }
+    if (a.v !== 0 && b.v !== 0) {
+      const z = a.v / (a.v - b.v);
+      const mid: MomentumPoint = { t: a.t + (b.t - a.t) * z, v: 0 };
+      pts.push(mid);
+      flush();
+      sign = next;
+      pts = [mid, b];
+    } else {
+      flush();
+      sign = next;
+      pts = [a.v === 0 ? a : b, b];
+      if (pts[0] === pts[1]) pts = [b];
+    }
+  }
+  flush();
+  return segs;
+}
+
+function areaPath(pts: MomentumPoint[], dur: number): string {
+  if (!pts.length) return "";
+  const y0 = momY(0).toFixed(1);
+  let d = `M${momX(pts[0].t, dur).toFixed(1)},${y0}`;
+  for (const p of pts) d += `L${momX(p.t, dur).toFixed(1)},${momY(p.v).toFixed(1)}`;
+  d += `L${momX(pts[pts.length - 1].t, dur).toFixed(1)},${y0}Z`;
+  return d;
+}
+
+function linePath(pts: MomentumPoint[], dur: number): string {
+  return pts
+    .map((p, i) => `${i ? "L" : "M"}${momX(p.t, dur).toFixed(1)},${momY(p.v).toFixed(1)}`)
+    .join("");
+}
+
 function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
@@ -74,6 +156,8 @@ class App {
   private readonly keyMoments: MatchEvent[];
   private readonly goals: MatchEvent[];
   private readonly spells: Spell[];
+  private readonly series: MomentumPoint[];
+  private readonly peaks: MomentumPoint[];
   private readonly feed: FeedItem[];
   private readonly datasetKey: string;
 
@@ -112,6 +196,8 @@ class App {
     this.keyMoments = ev.filter((e) => e.type === "shot" || e.type === "offside").sort((a, b) => a.t - b.t);
     this.goals = ev.filter((e) => e.type === "goal");
     this.spells = momentumSpells(match);
+    this.series = momentumSeries(match);
+    this.peaks = momentumPeaks(this.series);
     // Live cards need trustworthy events and speeds: synthetic data only.
     this.feed = match.meta.source === "synthetic" ? buildFeed(match, this.spells) : [];
     this.setupUi();
@@ -176,6 +262,7 @@ class App {
     $('#aiTeam option[value="away"]').textContent = `${this.match.meta.teams.away.short} fan`;
     $("#helpBtn").onclick = () => ($("#help").hidden = !$("#help").hidden);
     $("#help").onclick = () => ($("#help").hidden = true);
+    $("#momentumBtn").onclick = () => this.toggleMomentum();
     this.buildMoments();
 
     this.buildTimeline();
@@ -306,24 +393,180 @@ class App {
     return p ? p.label : "";
   }
 
-  /** Control vs chaos strip above the timeline: bars up for home control, down for away. */
+  /** Outfield kit colour — same `primary` the figures are painted with. */
+  private kit(team: TeamKey): string {
+    return this.match.meta.teams[team].colors.primary;
+  }
+
+  /** Collapsible possession-dynamics chart. Clicking or dragging seeks the match. */
   private buildMomentum() {
-    const spells = this.spells;
-    const strip = $("#momentum");
-    strip.hidden = !spells.length;
+    const series = this.series;
+    const btn = $("#momentumBtn");
+    const chart = $("#momentumChart");
+    if (!series.length) {
+      btn.hidden = true;
+      chart.hidden = true;
+      chart.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("momentum-open");
+      return;
+    }
+    btn.hidden = false;
+    chart.hidden = false;
     const { home, away } = this.match.meta.teams;
     const dur = this.match.duration;
-    for (const sp of spells) {
-      const diff = sp.home - sp.away;
-      const bar = document.createElement("div");
-      bar.className = `bar ${diff >= 0 ? "up" : "down"}`;
-      bar.style.left = `${(sp.t0 / dur) * 100}%`;
-      bar.style.width = `${((sp.t1 - sp.t0) / dur) * 100}%`;
-      bar.style.setProperty("--h", `${Math.min(1, Math.abs(diff) / 60) * 50}%`);
-      bar.style.setProperty("--c", (diff >= 0 ? home : away).colors.primary);
-      strip.append(bar);
+    const homeKit = this.kit("home");
+    const awayKit = this.kit("away");
+    chart.style.setProperty("--hc", homeKit);
+    chart.style.setProperty("--ac", awayKit);
+    $("#momentumTitle").textContent =
+      `Possession dynamics — ${MOMENTUM_WINDOW_S} s window, sampled every ${MOMENTUM_STEP_S} s · ${series.length} points`;
+    $("#momentumSub").textContent = `+1 = full ${home.short} control  ·  −1 = full ${away.short} control`;
+    $("#momentumLegend").innerHTML =
+      `<span><i style="background:${homeKit}"></i>${esc(home.short)} controls</span>` +
+      `<span><i style="background:${awayKit}"></i>${esc(away.short)} controls</span>`;
+
+    const yBox = $("#momentumY");
+    yBox.replaceChildren();
+    for (const v of [1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75, -1]) {
+      const s = document.createElement("span");
+      s.textContent = `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
+      s.style.top = momYPct(v);
+      yBox.append(s);
     }
-    strip.title = `Momentum: control index per ${Math.round(spells[0]?.t1 ?? 30)} s, up = ${home.short}, down = ${away.short}`;
+    const xBox = $("#momentumX");
+    xBox.replaceChildren();
+    const ticks = axisTimes(dur);
+    ticks.forEach((t, i) => {
+      const s = document.createElement("span");
+      s.textContent = fmtAxisMin(t);
+      s.style.left = `${(t / dur) * 100}%`;
+      if (i === 0) s.style.transform = "none";
+      else if (i === ticks.length - 1) s.style.transform = "translateX(-100%)";
+      xBox.append(s);
+    });
+
+    const grid = [1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75, -1]
+      .map((v) => {
+        const y = momY(v).toFixed(1);
+        return `<line class="grid${v === 0 ? " zero" : ""}" x1="0" y1="${y}" x2="${MOM_VW}" y2="${y}"/>`;
+      })
+      .join("");
+    const segs = splitMomentum(series);
+    const fills = segs
+      .map((g) => {
+        const color = g.sign > 0 ? homeKit : awayKit;
+        return `<path class="fill" d="${areaPath(g.pts, dur)}" fill="${color}"/>`;
+      })
+      .join("");
+    const lines = segs
+      .map((g) => {
+        const color = g.sign > 0 ? homeKit : awayKit;
+        return `<path class="line" d="${linePath(g.pts, dur)}" stroke="${color}"/>`;
+      })
+      .join("");
+    $("#momentumSvg").innerHTML = `<g class="grids">${grid}</g><g class="mc-data">${fills}${lines}</g>`;
+
+    const peakBox = $("#momentumPeaks");
+    peakBox.replaceChildren();
+    for (const p of this.peaks) {
+      const b = document.createElement("button");
+      b.className = "mc-peak";
+      b.style.left = `${(p.t / dur) * 100}%`;
+      b.style.top = momYPct(p.v);
+      b.style.background = p.v >= 0 ? homeKit : awayKit;
+      const who = p.v >= 0 ? home.short : away.short;
+      b.title = `${fmtClock(p.t)}  ${who}  ${p.v > 0 ? "+" : ""}${p.v.toFixed(2)}`;
+      b.onclick = (ev) => {
+        ev.stopPropagation();
+        this.seek(p.t);
+      };
+      b.onpointerdown = (ev) => ev.stopPropagation();
+      peakBox.append(b);
+    }
+
+    const plot = $("#momentumPlot");
+    let dragging = false;
+    const at = (ev: PointerEvent) => {
+      const r = plot.getBoundingClientRect();
+      return Math.min(Math.max((ev.clientX - r.left) / r.width, 0), 1);
+    };
+    const tipAt = (ev: PointerEvent) => {
+      const x = at(ev);
+      const t = x * dur;
+      const v = momentumAt(series, t);
+      const hover = $("#momentumHover");
+      const tip = $("#momentumTip");
+      hover.hidden = false;
+      tip.hidden = false;
+      hover.style.left = `${x * 100}%`;
+      tip.style.left = `${x * 100}%`;
+      tip.style.top = momYPct(v);
+      tip.style.transform = v > 0.55 ? "translate(-50%, 12px)" : "translate(-50%, calc(-100% - 10px))";
+      const who = Math.abs(v) < 0.04 ? "even" : v > 0 ? home.short : away.short;
+      const mag = `${v > 0 ? "+" : ""}${v.toFixed(2)}`;
+      tip.textContent = `${fmtClock(t)}  ${who}  ${mag}`;
+    };
+    plot.onpointerdown = (ev) => {
+      dragging = true;
+      plot.setPointerCapture(ev.pointerId);
+      this.seek(at(ev) * dur);
+      tipAt(ev);
+    };
+    plot.onpointermove = (ev) => {
+      tipAt(ev);
+      if (dragging) this.seek(at(ev) * dur);
+    };
+    plot.onpointerup = plot.onpointercancel = (ev) => {
+      dragging = false;
+      const r = plot.getBoundingClientRect();
+      if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) {
+        $("#momentumHover").hidden = true;
+        $("#momentumTip").hidden = true;
+      }
+    };
+    plot.onpointerleave = () => {
+      if (dragging) return;
+      $("#momentumHover").hidden = true;
+      $("#momentumTip").hidden = true;
+    };
+  }
+
+  private toggleMomentum(force?: boolean) {
+    if (!this.series.length) return;
+    const chart = $("#momentumChart");
+    const open = force ?? !document.body.classList.contains("momentum-open");
+    document.body.classList.toggle("momentum-open", open);
+    chart.setAttribute("aria-hidden", String(!open));
+    $("#momentumBtn").setAttribute("aria-pressed", String(open));
+    if (!open) {
+      chart.classList.remove("drawing");
+      $("#momentumHover").hidden = true;
+      $("#momentumTip").hidden = true;
+      return;
+    }
+    this.layoutMomentum();
+    this.replayMomentumDraw();
+  }
+
+  /** Line the plot up with the timeline track so markers and playheads share one time axis. */
+  private layoutMomentum() {
+    const chart = $("#momentumChart");
+    if (!document.body.classList.contains("momentum-open")) return;
+    const body = $(".mc-body");
+    const br = body.getBoundingClientRect();
+    const tr = $("#track").getBoundingClientRect();
+    if (!br.width || !tr.width) return;
+    const left = Math.max(40, tr.left - br.left);
+    const right = Math.max(4, br.right - tr.right);
+    chart.style.setProperty("--plot-left", `${left}px`);
+    chart.style.setProperty("--plot-right", `${right}px`);
+  }
+
+  private replayMomentumDraw() {
+    const chart = $("#momentumChart");
+    chart.classList.remove("drawing");
+    void chart.offsetWidth;
+    chart.classList.add("drawing");
   }
 
   private buildMoments() {
@@ -361,6 +604,15 @@ class App {
         outcome === "offside"
           ? `${fmtClock(e.t)}  OFFSIDE - ${this.playerName(e.player)}`
           : `${fmtClock(e.t)}  ${outcome === "goal" ? "GOAL" : "Shot"} - ${this.playerName(e.player)} (${outcome.replace("_", " ")}${xg})`;
+      markers.append(m);
+    }
+    for (const p of this.peaks) {
+      const m = document.createElement("div");
+      const team = p.v >= 0 ? this.match.meta.teams.home : this.match.meta.teams.away;
+      m.className = "m peak";
+      m.style.left = `${(p.t / dur) * 100}%`;
+      m.style.background = this.kit(p.v >= 0 ? "home" : "away");
+      m.title = `${fmtClock(p.t)}  ${team.short} peak  ${p.v > 0 ? "+" : ""}${p.v.toFixed(2)}`;
       markers.append(m);
     }
     this.buildMomentum();
@@ -638,11 +890,13 @@ class App {
       else if (k === "d") this.toggle("distances");
       else if (k === "l") this.toggle("feed");
       else if (k === "f") this.toggle("focus");
+      else if (k === "m") this.toggleMomentum();
       else if (k === "delete" || k === "backspace") this.drawings.clear();
       else if (k === "escape") {
         this.selected = [];
         if (this.toggles.focus) this.setFocus(false);
         $("#help").hidden = true;
+        if (document.body.classList.contains("momentum-open")) this.toggleMomentum(false);
       } else if (k === "?" || k === "h") $("#help").hidden = !$("#help").hidden;
       else return;
       e.preventDefault();
@@ -664,6 +918,7 @@ class App {
     this.mini.height = Math.round(mh * dpr);
     this.mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.snapCamera = true;
+    this.layoutMomentum();
   }
 
   private frame(now: number) {
@@ -698,6 +953,12 @@ class App {
     const f = (this.t / this.match.duration) * 100;
     $("#progress").style.width = `${f}%`;
     $("#playhead").style.left = `${f}%`;
+    if (this.series.length) {
+      $("#momentumHead").style.left = `${f}%`;
+      const dot = $("#momentumDot");
+      dot.style.left = `${f}%`;
+      dot.style.top = momYPct(momentumAt(this.series, this.t));
+    }
     $("#clock").textContent = fmtClock(this.t);
     this.updateFocusCard();
     $("#playIcon").innerHTML = `<path d="${this.playing ? PAUSE_ICON : PLAY_ICON}"/>`;

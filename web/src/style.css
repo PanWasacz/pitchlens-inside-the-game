@@ -245,6 +245,7 @@ svg {
   min-height: 220px;
   overflow: auto;
   padding: 14px 16px;
+  transition: max-height 0.38s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 #insights h2 {
@@ -312,6 +313,14 @@ svg {
   color: var(--muted);
 }
 
+#momentumBtn {
+  font: 700 13px var(--display);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex: none;
+  padding: 7px 10px;
+}
+
 #helpBtn {
   font: 700 16px var(--display);
   width: 34px;
@@ -364,6 +373,7 @@ svg {
   height: 154px;
   padding: 0;
   pointer-events: none;
+  transition: bottom 0.38s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* ------------------------------------------------------------ transport */
@@ -470,6 +480,15 @@ svg {
   transform: translate(-50%, -50%) rotate(45deg);
 }
 
+#markers .m.peak {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  border: 2px solid #fff;
+  transform: translate(-50%, -50%) rotate(45deg);
+  z-index: 2;
+}
+
 #banner .tag.flag {
   background: #ff4fd8;
   color: #ffffff;
@@ -483,7 +502,7 @@ svg {
   bottom: 96px;
   transform: translate(-50%, 30px);
   opacity: 0;
-  transition: opacity 0.35s, transform 0.35s;
+  transition: opacity 0.35s, transform 0.35s, bottom 0.38s cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
   display: flex;
   overflow: hidden;
@@ -559,6 +578,9 @@ svg {
   #insights {
     max-height: calc(100% - 170px);
   }
+  body.momentum-open #insights {
+    max-height: calc(100% - 400px);
+  }
   #toggles button,
   #views button {
     padding: 6px 8px;
@@ -573,6 +595,20 @@ svg {
     flex-direction: row;
     flex-wrap: wrap;
     max-width: calc(100% - 24px);
+    transition: bottom 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  body.momentum-open #tools {
+    bottom: 340px;
+  }
+  body.momentum-open #momentumChart {
+    height: 180px;
+    padding: 8px 10px 6px;
+  }
+  #momentumLegend {
+    display: none;
+  }
+  #momentumBtn {
+    padding: 7px 8px;
   }
   #tools hr {
     display: none;
@@ -734,43 +770,296 @@ svg {
   color: var(--muted);
 }
 
-/* ------------------------------------------------------------ momentum strip */
+/* -------------------------------------------------------- possession chart */
 
-#momentum {
+#momentumChart {
+  --plot-left: 42px;
+  --plot-right: 4px;
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 84px;
+  height: 0;
+  padding: 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 4;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transform: translateY(14px);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  transition:
+    height 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    padding 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.28s ease,
+    transform 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 0.38s,
+    background 0.28s ease,
+    border-color 0.28s ease,
+    box-shadow 0.28s ease;
+}
+
+body.momentum-open #momentumChart {
+  height: 228px;
+  padding: 10px 14px 8px;
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transform: none;
+  background: var(--panel);
+  border-color: var(--line);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.mc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+}
+
+#momentumTitle {
+  font: 700 15px var(--display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+#momentumSub {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+#momentumLegend {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex: none;
+  font: 600 12px var(--display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+#momentumLegend i {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.mc-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.mc-y {
   position: absolute;
   left: 0;
-  right: 0;
-  bottom: 7px;
-  height: 18px;
+  top: 0;
+  bottom: 20px;
+  width: var(--plot-left);
   pointer-events: none;
 }
 
-#momentum::after {
-  content: "";
+.mc-y span {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  right: 6px;
+  transform: translateY(-50%);
+  font: 600 11px var(--ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
-#momentum .bar {
+.mc-x {
   position: absolute;
-  height: var(--h);
-  padding: 0 1px;
-  background-clip: content-box;
-  background-color: var(--c);
-  opacity: 0.75;
+  left: var(--plot-left);
+  right: var(--plot-right);
+  bottom: 0;
+  height: 20px;
+  pointer-events: none;
 }
 
-#momentum .bar.up {
-  bottom: 50%;
-  border-radius: 2px 2px 0 0;
+.mc-x span {
+  position: absolute;
+  transform: translateX(-50%);
+  font: 600 11px var(--ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
-#momentum .bar.down {
-  top: 50%;
-  border-radius: 0 0 2px 2px;
+.mc-x span:first-child {
+  transform: none;
+}
+
+.mc-x span:last-child {
+  transform: translateX(-100%);
+}
+
+.mc-plot {
+  position: absolute;
+  left: var(--plot-left);
+  right: var(--plot-right);
+  top: 0;
+  bottom: 20px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+#momentumSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+#momentumSvg .grid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+#momentumSvg .grid.zero {
+  stroke: rgba(255, 255, 255, 0.28);
+}
+
+#momentumSvg .fill {
+  stroke: none;
+  fill-opacity: 0.72;
+}
+
+#momentumSvg .line {
+  fill: none;
+  stroke-width: 1.75;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+#momentumChart.drawing .mc-data,
+#momentumChart.drawing .mc-peaks {
+  animation: mc-draw 1.4s linear both;
+}
+
+@keyframes mc-draw {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.mc-peaks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mc-peak {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  min-width: 12px;
+  margin: -6px 0 0 -6px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.mc-peak:hover {
+  transform: scale(1.2);
+}
+
+#momentumHead,
+#momentumHover {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1.5px solid rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+}
+
+#momentumHover {
+  border-left-style: dashed;
+  border-left-color: rgba(255, 255, 255, 0.45);
+}
+
+#momentumDot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(43, 245, 182, 0.55);
+  pointer-events: none;
+}
+
+#momentumTip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: rgba(8, 12, 22, 0.94);
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font: 700 13px var(--display);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+body.momentum-open #minimap {
+  bottom: 340px;
+}
+
+body.momentum-open #banner {
+  bottom: 348px;
+}
+
+body.momentum-open #focusCard {
+  bottom: 340px;
+}
+
+body.momentum-open #insights {
+  max-height: calc(100% - 560px);
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #momentumChart,
+  #minimap,
+  #banner,
+  #focusCard,
+  #insights,
+  #tools {
+    transition: none;
+  }
+  #momentumChart.drawing .mc-data,
+  #momentumChart.drawing .mc-peaks {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------------ live feed */
@@ -847,6 +1136,7 @@ svg {
   width: 300px;
   padding: 10px 12px;
   border-top: 3px solid var(--c, var(--accent));
+  transition: bottom 0.38s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 #focusCard .fh {
