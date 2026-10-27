@@ -75,7 +75,7 @@ await page.evaluate(() => {
 await shot("ai-analyst");
 
 // 6. Same moment for a Polish fan, and a recap.
-await audience(page, "fan", "pl", "home");
+await audience(page, "fan", "pl", "away");
 await ask(page);
 await shot("ai-fan-pl");
 await seek(page, 600);
