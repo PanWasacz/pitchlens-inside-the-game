@@ -20,6 +20,8 @@ from pitchlens_agents.tools import FactStore, get_offside_state, get_player_stat
 from pitchlens_agents.verify import Evidence, check_text, numbers_in  # noqa: E402
 
 M = demo_match()
+# These tests exercise the agents themselves, not the answers precomputed with the model.
+agents._precomputed = {}
 OFFSIDE_PASS_T = 212.4  # 03:32, pass that leads to the offside flag at 03:35
 
 
