@@ -30,6 +30,7 @@
         <button data-toggle="shapeAway" aria-pressed="false">Away shape</button>
         <button data-toggle="offside" aria-pressed="false">Offside</button>
         <button data-toggle="distances" aria-pressed="false">Distances</button>
+        <button data-toggle="feed" aria-pressed="true" title="Live insight cards while the match plays (L)">Live feed</button>
       </div>
       <div class="panel group">
         <select id="dataset" aria-label="Match source"></select>
@@ -104,6 +105,7 @@
         <dt>Ctrl + Z</dt><dd>Undo drawing</dd>
         <dt>Del</dt><dd>Clear drawings</dd>
         <dt>O / D</dt><dd>Offside line / distances</dd>
+        <dt>L</dt><dd>Live insight feed</dd>
         <dt>Esc</dt><dd>Deselect players</dd>
         <dt>Wheel / pinch</dt><dd>Zoom the TV camera</dd>
       </dl>
@@ -139,6 +141,7 @@
       <button id="helpBtn" title="Shortcuts (?)">?</button>
     </footer>
 
+    <div id="feed" aria-live="polite"></div>
     <div id="banner" aria-live="polite"></div>
     <div id="loading">
       <div class="logo">PITCHLENS <span>STUDIO</span></div>

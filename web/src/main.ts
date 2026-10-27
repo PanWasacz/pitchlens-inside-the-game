@@ -1,7 +1,8 @@
-import { drawDistances, drawFormation, drawOffside, momentumSpells } from "./analysis";
+import { drawDistances, drawFormation, drawOffside, momentumSpells, type Spell } from "./analysis";
 import { BlendCamera, TopCamera, TvCamera, VideoCamera, type Camera } from "./camera";
 import { DATASETS, datasetAvailable, loadMatch, type Dataset, type Match, type MatchEvent, type TeamKey } from "./data";
 import { Drawings, type Tool } from "./drawings";
+import { buildFeed, type FeedItem } from "./feed";
 import { L, MARKINGS, W, type Pt } from "./pitch";
 import {
   ACCENT,
@@ -19,7 +20,7 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySe
 const $$ = <T extends HTMLElement = HTMLElement>(sel: string) => [...document.querySelectorAll(sel)] as T[];
 
 type View = "main" | "recon" | "top";
-type Toggle = "shapeHome" | "shapeAway" | "offside" | "distances";
+type Toggle = "shapeHome" | "shapeAway" | "offside" | "distances" | "feed";
 type Audience = "analyst" | "fan";
 
 interface Explanation {
@@ -71,6 +72,8 @@ class App {
   private readonly drawings = new Drawings();
   private readonly keyMoments: MatchEvent[];
   private readonly goals: MatchEvent[];
+  private readonly spells: Spell[];
+  private readonly feed: FeedItem[];
 
   private w = 0;
   private h = 0;
@@ -81,7 +84,7 @@ class App {
   private viewFrom: View = "main";
   private viewStart = -Infinity;
   private selected: number[] = [];
-  private toggles: Record<Toggle, boolean> = { shapeHome: false, shapeAway: false, offside: false, distances: false };
+  private toggles: Record<Toggle, boolean> = { shapeHome: false, shapeAway: false, offside: false, distances: false, feed: true };
   private tool: Tool = "select";
   private color = DRAW_COLORS[0];
   private drawing = false;
@@ -101,6 +104,9 @@ class App {
     const ev = match.events;
     this.keyMoments = ev.filter((e) => e.type === "shot" || e.type === "offside").sort((a, b) => a.t - b.t);
     this.goals = ev.filter((e) => e.type === "goal");
+    this.spells = momentumSpells(match);
+    // Live cards need trustworthy events and speeds: synthetic data only.
+    this.feed = match.meta.source === "synthetic" ? buildFeed(match, this.spells) : [];
     this.setupUi();
     if (this.video) {
       this.view = this.viewFrom = "recon";
@@ -233,7 +239,7 @@ class App {
 
   /** Control vs chaos strip above the timeline: bars up for home control, down for away. */
   private buildMomentum() {
-    const spells = momentumSpells(this.match);
+    const spells = this.spells;
     const strip = $("#momentum");
     strip.hidden = !spells.length;
     const { home, away } = this.match.meta.teams;
@@ -317,6 +323,30 @@ class App {
       team("away") +
       `<div class="time">${fmtClock(this.t)}</div>`;
     $("#scorebug").title = `${home.name} vs ${away.name}`;
+  }
+
+  /** Live insight card; key moments can be handed to the AI analyst. */
+  private pushCard(item: FeedItem) {
+    const box = $("#feed");
+    const card = document.createElement("div");
+    card.className = `card panel ${item.kind}`;
+    card.style.setProperty("--c", item.color);
+    card.innerHTML = `<div class="ct"><span class="mt">${fmtClock(item.t)}</span>${esc(item.title)}</div><div class="cx">${esc(item.text)}</div>`;
+    if (item.explainable) {
+      const b = document.createElement("button");
+      b.textContent = "Explain";
+      b.onclick = () => {
+        if (this.playing) this.togglePlay();
+        $("#insights").hidden = false;
+        $("#insightsBtn").setAttribute("aria-pressed", "true");
+        this.explain("moment");
+      };
+      card.append(b);
+    }
+    box.prepend(card);
+    while (box.children.length > 3) box.lastElementChild!.remove();
+    window.setTimeout(() => card.classList.add("out"), 6000);
+    window.setTimeout(() => card.remove(), 6600);
   }
 
   private showBanner(e: MatchEvent) {
@@ -535,6 +565,7 @@ class App {
       else if (k === "e") this.setTool("eraser");
       else if (k === "o") this.toggle("offside");
       else if (k === "d") this.toggle("distances");
+      else if (k === "l") this.toggle("feed");
       else if (k === "delete" || k === "backspace") this.drawings.clear();
       else if (k === "escape") {
         this.selected = [];
@@ -576,6 +607,7 @@ class App {
     if (this.playing && !this.snapCamera) {
       const hit = this.match.events.find((g) => (g.type === "goal" || g.type === "offside") && g.t > prevT && g.t <= this.t);
       if (hit) this.showBanner(hit);
+      if (this.toggles.feed) for (const item of this.feed) if (item.t > prevT && item.t <= this.t) this.pushCard(item);
     }
     this.render(now, dt);
     this.updateTransport();
