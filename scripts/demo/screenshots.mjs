@@ -2,7 +2,7 @@
 // Needs the studio (npm run dev in web/) and, for the AI panel, the API (python api/server.py).
 
 import { mkdirSync } from "node:fs";
-import { app, ask, audience, clearOverlays, draw, insights, launch, openStudio, pause, play, seek, select, toggle, view } from "./lib.mjs";
+import { URL as SITE, app, ask, audience, clearOverlays, draw, insights, launch, openStudio, pause, play, seek, select, toggle, view } from "./lib.mjs";
 
 const OUT = new URL("../../docs/img/", import.meta.url);
 mkdirSync(OUT, { recursive: true });
@@ -82,5 +82,36 @@ await seek(page, 600);
 await audience(page, "analyst", "en");
 await ask(page, "#recap");
 await shot("ai-recap");
+await insights(page, false);
+
+// 7. Possession dynamics chart (M).
+await seek(page, 300);
+await app(page, (a) => a.toggleMomentum(true));
+await page.waitForTimeout(4000);
+await shot("momentum-chart");
+await app(page, (a) => a.toggleMomentum(false));
+
+// 8. Match report panel: statistics, then the maps further down.
+await app(page, (a) => a.toggleReport(true));
+await page.waitForFunction(() => document.querySelector("#report")?.dataset.loaded === "true", null, { timeout: 30000 });
+await page.waitForTimeout(1500);
+await shot("report");
+await page.evaluate(() => {
+  const h = [...document.querySelectorAll("#reportOut h3")].find((x) => x.textContent?.startsWith("Shot map"));
+  h?.scrollIntoView({ block: "start" });
+});
+await page.waitForTimeout(1500);
+await shot("report-maps");
+await app(page, (a) => a.toggleReport(false));
+
+// 9. A scenario: the transition-attack goal.
+await page.goto(`${SITE}${SITE.includes("?") ? "&" : "?"}data=transition-attack`);
+await page.waitForFunction(() => window.pitchlens && document.querySelector("#loading.done"), null, { timeout: 60000 });
+await toggle(page, "feed", true);
+await seek(page, 489);
+await play(page, 1);
+await page.waitForTimeout(7000);
+await pause(page);
+await shot("scenario-transition");
 
 await browser.close();

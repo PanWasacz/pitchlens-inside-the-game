@@ -1,5 +1,5 @@
-// Lays the voice-over (out/voice/NN.wav) over the recorded video -> out/pitchlens-demo.mp4
-// (H.264 + AAC, for YouTube).
+// Lays the voice-over (out/<VOICE_DIR>/NN.wav) over the recorded video -> out/pitchlens-demo.mp4
+// (H.264 + AAC, for YouTube). Lines whose recording is missing are left silent (draft).
 //
 //   node mix.mjs            # needs ffmpeg on PATH, or FFMPEG=<path to ffmpeg.exe>
 //
@@ -8,13 +8,14 @@
 // the start of every segment. The mark is painted over in the output.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const out = (name) => new URL(`./out/${name}`, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const ffmpeg = process.env.FFMPEG ?? "ffmpeg";
 const LEAD = 0.3; // same as video.mjs: the line starts this long after the cut
 const timeline = JSON.parse(readFileSync(out("timeline.json"), "utf8"));
 const video = out("pitchlens-demo.webm");
+const VOICE_DIR = process.env.VOICE_DIR ?? "voice";
 
 // Brightness of the sync mark in every frame.
 const log = spawnSync(
@@ -49,7 +50,7 @@ const TAIL = 0.5;
 const total = Number(
   spawnSync(ffmpeg.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1"), ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video], { encoding: "utf8" }).stdout,
 );
-const voiceLen = JSON.parse(readFileSync(out("voice/voice.json"), "utf8"));
+const voiceLen = JSON.parse(readFileSync(out(`${VOICE_DIR}/voice.json`), "utf8"));
 const pieces = [{ from: 0, to: flips[0], hold: 0 }];
 const starts = [];
 let cursor = flips[0];
@@ -71,12 +72,19 @@ pieces.forEach((p, i) => {
 filters.push(`${pieces.map((_, i) => `[p${i}]`).join("")}concat=n=${pieces.length}:v=1:a=0[pic]`);
 
 const args = ["-y", "-hide_banner", "-loglevel", "error", "-i", video];
+const lines = [];
 timeline.forEach(({ n }, i) => {
-  args.push("-i", out(`voice/${String(n).padStart(2, "0")}.wav`));
+  const wav = out(`${VOICE_DIR}/${String(n).padStart(2, "0")}.wav`);
+  if (!existsSync(wav)) {
+    console.log(`line ${n}: no recording yet, left silent`);
+    return;
+  }
+  args.push("-i", wav);
   const ms = Math.round(starts[i] * 1000);
-  filters.push(`[${i + 1}:a]adelay=${ms}|${ms}[v${i}]`);
+  filters.push(`[${lines.length + 1}:a]adelay=${ms}|${ms}[v${lines.length}]`);
+  lines.push(n);
 });
-filters.push(`${timeline.map((_, i) => `[v${i}]`).join("")}amix=inputs=${timeline.length}:normalize=0:dropout_transition=0,apad[voice]`);
+filters.push(`${lines.map((_, i) => `[v${i}]`).join("")}amix=inputs=${lines.length}:normalize=0:dropout_transition=0,apad[voice]`);
 args.push(
   "-filter_complex", filters.join(";"),
   "-map", "[pic]", "-map", "[voice]",

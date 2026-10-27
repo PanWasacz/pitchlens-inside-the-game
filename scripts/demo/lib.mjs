@@ -1,17 +1,43 @@
 // Shared helpers for the scripted demos. They drive the studio through its UI
 // and the `window.pitchlens` handle (synthetic match only).
 
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromium } from "playwright";
 
 export const URL = process.env.PITCHLENS_URL ?? "http://localhost:5173";
 
-/** Microsoft Edge if installed (always on Windows), else Playwright's own Chromium. */
+const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+
+/**
+ * A headless browser for the demos. Newer Edge builds no longer start in Playwright's
+ * pipe mode, so Edge is started with a debugging port and attached over CDP; elsewhere
+ * Playwright's own Chromium is used.
+ */
 export async function launch() {
-  try {
-    return await chromium.launch({ channel: "msedge" });
-  } catch {
-    return await chromium.launch();
+  if (existsSync(EDGE)) {
+    const profile = mkdtempSync(join(tmpdir(), "pitchlens-edge-"));
+    const port = 9300 + Math.floor(Math.random() * 500);
+    const proc = spawn(EDGE, ["--headless=new", "--no-first-run", "--hide-scrollbars", "--mute-audio",
+      `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, "about:blank"], { stdio: "ignore" });
+    for (let i = 0; i < 60; i++) {
+      try {
+        const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
+        const close = browser.close.bind(browser);
+        browser.close = async () => {
+          await close().catch(() => {});
+          proc.kill();
+        };
+        return browser;
+      } catch {
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    }
+    proc.kill();
   }
+  return chromium.launch();
 }
 
 export async function openStudio(page) {
