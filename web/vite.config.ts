@@ -47,7 +47,7 @@ export default defineConfig({
   plugins: [devOnly()],
   server: {
     host: true,
-    // The explain agents run in api/ (python api/local_server.py, or `swa start` / `func start`).
+    // The explain agents run in api/ (python api/server.py).
     proxy: { "/api": "http://127.0.0.1:7071" },
   },
 });

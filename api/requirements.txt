@@ -1,2 +1,1 @@
-# The agents use only the Python standard library; this is the Functions runtime binding.
-azure-functions
+# The agents and the server use only the Python standard library.

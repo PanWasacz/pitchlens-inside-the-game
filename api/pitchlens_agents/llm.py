@@ -1,6 +1,6 @@
 """Minimal Azure OpenAI / Microsoft Foundry chat client (standard library only).
 
-Configured from environment variables (Static Web App settings in Azure,
+Configured from environment variables (App Service settings in Azure,
 api/local.settings.json locally):
 
     AZURE_OPENAI_ENDPOINT     https://<resource>.openai.azure.com/  (or a Foundry
@@ -127,7 +127,7 @@ def parse_json(text: str) -> dict:
 
 
 class Budget:
-    """Wall-clock budget for one request (Static Web Apps cuts API calls at about 45 s)."""
+    """Wall-clock budget for one request, so the viewer never waits much longer than ~40 s."""
 
     def __init__(self, seconds: float):
         self.deadline = time.monotonic() + seconds

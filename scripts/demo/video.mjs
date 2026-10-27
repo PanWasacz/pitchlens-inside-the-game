@@ -1,6 +1,6 @@
 // Records the demo video (under 2 minutes, 1920x1080, synthetic match only) -> scripts/demo/out/pitchlens-demo.webm
 //
-//   node video.mjs                                   # local studio (npm run dev + python api/local_server.py)
+//   node video.mjs                                   # local studio (npm run dev + python api/server.py)
 //   PITCHLENS_URL=https://<site>.azurestaticapps.net node video.mjs   # deployed site with the real model
 //
 // Captions are burnt in, so the video also works without a voice-over. With a voice-over
@@ -228,7 +228,7 @@ await page.evaluate(
     el.innerHTML = html;
     document.body.append(el);
   },
-  [CARD_STYLE, cardHtml(LOGO, `Microsoft Foundry · Azure Static Web Apps · Azure Functions · Application Insights · GitHub Actions<br><br>${REPO}`)],
+  [CARD_STYLE, cardHtml(LOGO, `Microsoft Foundry · Azure App Service · Application Insights · GitHub Actions<br><br>${REPO}`)],
 );
 await seg(11, () => wait(4));
 await wait(1);

@@ -22,7 +22,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from local_server import load_settings  # noqa: E402
+from server import load_settings  # noqa: E402
 from pitchlens_agents.agents import RECAP_STEP_S, explain, moment_key, recap_moment, resolve_moment  # noqa: E402
 from pitchlens_agents.llm import LLM  # noqa: E402
 from pitchlens_agents.match import DATA_DIR, demo_match  # noqa: E402

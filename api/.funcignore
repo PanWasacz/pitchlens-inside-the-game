@@ -1,7 +1,0 @@
-tests/
-local_server.py
-build_data.py
-local.settings.json
-local.settings.example.json
-__pycache__/
-precompute.py

@@ -1,5 +1,5 @@
 // README screenshots of the synthetic demo match -> docs/img/*.png
-// Needs the studio (npm run dev in web/) and, for the AI panel, the API (python api/local_server.py).
+// Needs the studio (npm run dev in web/) and, for the AI panel, the API (python api/server.py).
 
 import { mkdirSync } from "node:fs";
 import { app, ask, audience, clearOverlays, draw, insights, launch, openStudio, pause, play, seek, select, toggle, view } from "./lib.mjs";

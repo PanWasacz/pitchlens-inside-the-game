@@ -33,3 +33,6 @@ api/.python_packages/
 
 # Scripted demo output
 scripts/demo/out/
+
+# App Service package (scripts/build_site.py)
+site/

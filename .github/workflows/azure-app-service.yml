@@ -1,0 +1,52 @@
+# Tests the agents, builds the studio and deploys both to Azure App Service (Linux, Python).
+# Needs the repository secret AZURE_WEBAPP_PUBLISH_PROFILE and the repository variable
+# AZURE_WEBAPP_NAME (see docs/deploy.md). Until they are set the deploy step is skipped.
+
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Agent tests
+        working-directory: api
+        run: python -m unittest discover -s tests -v
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      PUBLISH_PROFILE: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+      APP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build the studio
+        working-directory: web
+        run: npm ci && npm run build
+      - name: Assemble the package
+        run: python scripts/build_site.py
+      - name: Skip notice
+        if: env.PUBLISH_PROFILE == '' || env.APP_NAME == ''
+        run: echo "::notice::AZURE_WEBAPP_PUBLISH_PROFILE / AZURE_WEBAPP_NAME are not set yet, skipping the deploy."
+      - name: Deploy
+        if: env.PUBLISH_PROFILE != '' && env.APP_NAME != ''
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.APP_NAME }}
+          publish-profile: ${{ env.PUBLISH_PROFILE }}
+          package: site

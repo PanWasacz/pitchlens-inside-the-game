@@ -42,7 +42,7 @@ Deterministic tools compute **every** number; the model never does arithmetic.
 ```mermaid
 flowchart LR
     UI["Studio<br/>Explain / Recap"] -->|POST /api/explain| A
-    subgraph Fn["Azure Function (Static Web Apps)"]
+    subgraph Fn["Azure App Service: python server.py"]
         A["Analyst<br/>calls tools, picks key facts"] --> E["Explainer<br/>why it matters, cites fact ids"]
         E --> V{"Verifier<br/>code: numbers, times, names<br/>model: logic"}
         V -->|issues, once| E
@@ -67,8 +67,8 @@ flowchart LR
   and its output is checked again.
 
 **Reliability.** Each step falls back to fact-backed templates if the model fails,
-so the endpoint always answers. A 38 s budget keeps requests under the Static Web
-Apps limit, answers are cached, and key moments can be precomputed with the real
+so the endpoint always answers. A 38 s budget bounds every request, answers are
+cached, and key moments can be precomputed with the real
 model (`api/precompute.py`) for instant, repeatable results. Every request logs the
 agents' status and timing for Application Insights.
 
@@ -81,10 +81,9 @@ Content Safety filters, and every claim on screen is traceable to a computed fac
 | | |
 |---|---|
 | **Microsoft Foundry** (Azure OpenAI) | model deployment behind the four agents: tool calling and JSON outputs |
-| **Azure Static Web Apps** | public studio and the managed API |
-| **Azure Functions** (Python) | `/api/explain`: the agents, tools and verifier |
+| **Azure App Service** (Linux, Python 3.11) | one standard-library server for the studio and `/api/explain` (agents, tools, verifier) |
 | **Application Insights** | per-request agent trace (status, timing, model calls, tokens) |
-| **GitHub Actions** | tests the agents, builds and deploys on every push |
+| **GitHub Actions** | tests the agents, builds the studio and deploys to App Service on every push |
 
 ## Data
 
@@ -104,7 +103,7 @@ published, deployed or shown in the demo.
 ## Run it locally
 
 ```bash
-python api/local_server.py      # AI analyst API on :7071 (standard library only)
+python api/server.py            # AI analyst API on :7071 (standard library only)
 cd web
 npm install
 npm run dev                     # studio on http://localhost:5173
@@ -133,9 +132,9 @@ V A C Z E tools · O offside · D distances · L live feed · F player focus · 
 |---|---|
 | `pitchlens_synth/` | synthetic match generator |
 | `web/` | studio (Vite + TypeScript + canvas 2D, no framework) |
-| `api/` | Azure Function `/api/explain`: agents, tools, verifier, templates, tests |
+| `api/` | `server.py` (studio + `/api/explain`), agents, tools, verifier, templates, tests |
 | `pitchlens_cv/` | CV pipeline for local video (detection, tracking, calibration, export) |
-| `scripts/demo/` | scripted screenshots and demo video (Playwright) |
+| `scripts/` | `build_site.py` (App Service package), `demo/` scripted screenshots and video (Playwright, ffmpeg) |
 | `docs/` | data format, deployment guide, screenshots |
 
 ## Known limitations

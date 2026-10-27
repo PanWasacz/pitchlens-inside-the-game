@@ -1,90 +1,103 @@
 # Deploying PitchLens to Azure
 
-The public demo runs on **Azure Static Web Apps** (the studio plus a managed
-Python Function at `/api/explain`). The function's agents use a model deployed
-in **Microsoft Foundry** (Azure OpenAI). Only the synthetic match is deployed:
-real footage and CV output live in the git-ignored `match/` folder and are
-never built.
+The public demo runs on **Azure App Service** (Linux, Python 3.11): one standard-library
+process, `api/server.py`, serves the studio and `POST /api/explain`. The agents use a
+model deployed in **Microsoft Foundry**. Only the synthetic match is deployed: real
+footage and CV output live in the git-ignored `match/` folder and are never built.
 
 ```
-browser (web/dist)  ──POST /api/explain──▶  Static Web App managed Function (api/)
-                                              tools on api/data (synthetic match)
-                                              Analyst → Explainer → Verifier → Personalizer
-                                                          │
-                                                          ▼
-                                              Microsoft Foundry model deployment
+browser ──GET /, /assets, /data──▶  App Service: python server.py ── static studio (web/dist, gzip)
+        ──POST /api/explain────▶                                 └─ Analyst → Explainer → Verifier → Personalizer
+                                                                     tools on api/data (synthetic match)
+                                                                           │
+                                                                           ▼
+                                                             Microsoft Foundry model deployment
 ```
 
-## 1. Static Web App (public link)
+Use any region your subscription allows. App Service and Foundry models are available
+in most European regions (for example `swedencentral` or `polandcentral`).
 
-1. [portal.azure.com](https://portal.azure.com) → **Create a resource** → **Static Web App**.
-2. Plan **Free**, region **West Europe**.
-3. Deployment source **Other** (the repository already has its own workflow,
-   `.github/workflows/azure-static-web-apps.yml`, so the Azure subscription owner
-   needs no access to the GitHub repository).
-   CLI equivalent: `az staticwebapp create -n pitchlens-studio -g rg-pitchlens -l westeurope --sku Free`.
-4. Copy the deployment token: resource → **Manage deployment token**
-   (or `az staticwebapp secrets list -n pitchlens-studio -g rg-pitchlens --query properties.apiKey -o tsv`).
-5. In GitHub: repository → **Settings → Secrets and variables → Actions** →
-   new secret `AZURE_STATIC_WEB_APPS_API_TOKEN` with that token.
-6. Run the workflow from the **Actions** tab (or push to `main`). It runs the agent
-   tests, builds `web/` (output `dist`) and deploys `web/` plus `api/`.
-   The site URL is on the resource's **Overview** page. Every push to `main` redeploys.
+## 1. Model in Microsoft Foundry
 
-`web/staticwebapp.config.json` sets the Python 3.11 API runtime, the `.jsonl`
-MIME type, cache headers for `/data/*` and the SPA fallback, and blocks `/local/*`.
+1. [ai.azure.com](https://ai.azure.com) → create a project (this creates an AI Services resource).
+2. **Models + endpoints** → **Deploy model** → `gpt-4.1-mini` (or `gpt-4o-mini`; it needs
+   tool calling and JSON output). Reasoning models also work but are slower.
+3. Note the resource **endpoint**, a **key** and the **deployment name**.
 
-Without model settings the site already works: `/api/explain` answers with
-template explanations built from the same tools and checks (`engine: "fallback"`).
+## 2. Web App
 
-## 2. Model in Microsoft Foundry
+```powershell
+$rg = "rg-pitchlens"; $loc = "swedencentral"; $app = "pitchlens-studio-<unique>"
+az appservice plan create -n plan-pitchlens -g $rg -l $loc --is-linux --sku F1   # or B1
+az webapp create -n $app -g $rg -p plan-pitchlens --runtime "PYTHON:3.11"
+az webapp config set -n $app -g $rg --startup-file "python server.py"
+az webapp config appsettings set -n $app -g $rg --settings `
+  "AZURE_OPENAI_ENDPOINT=<endpoint>" "AZURE_OPENAI_API_KEY=<key>" "AZURE_OPENAI_DEPLOYMENT=gpt-4.1-mini" `
+  "SCM_DO_BUILD_DURING_DEPLOYMENT=true"
+az resource update -g $rg --name scm --namespace Microsoft.Web --resource-type basicPublishingCredentialsPolicies --parent "sites/$app" --set properties.allow=true
+az webapp deployment list-publishing-profiles -n $app -g $rg --xml > publish-profile.xml
+```
 
-1. [ai.azure.com](https://ai.azure.com) → create a project.
-2. **Models + endpoints** → **Deploy model** → `gpt-4o-mini` (or the newest
-   "mini" chat model offered; it needs tool calling and JSON output).
-   Pick a region with quota, e.g. Sweden Central or East US.
-3. Copy the **endpoint** (`https://<resource>.openai.azure.com/` or
-   `https://<resource>.services.ai.azure.com/`), the **key** and the **deployment name**.
-4. Portal → your Static Web App → **Settings → Environment variables** → add:
-   | name | value |
-   |---|---|
-   | `AZURE_OPENAI_ENDPOINT` | the endpoint |
-   | `AZURE_OPENAI_API_KEY` | the key |
-   | `AZURE_OPENAI_DEPLOYMENT` | the deployment name, e.g. `gpt-4o-mini` |
-   | `AZURE_OPENAI_API_VERSION` | optional, default `2024-10-21` |
-5. **Apply**. The next request uses the model (`engine: "foundry"` in the response
-   and in the "How this was produced" trace).
+`AZURE_OPENAI_API_VERSION` is optional (default `2024-10-21`). Keys exist only in the
+App Service settings and in the git-ignored `api/local.settings.json`. Set a budget alert
+on the subscription: the endpoint is public.
 
-Keys exist only in Azure settings and in the git-ignored `api/local.settings.json`.
-Set a budget alert on the subscription: the endpoint is public.
+## 3. Deploy from GitHub
+
+In the repository: **Settings → Secrets and variables → Actions**
+- secret `AZURE_WEBAPP_PUBLISH_PROFILE`: the content of `publish-profile.xml`;
+- variable `AZURE_WEBAPP_NAME`: the app name.
+
+Run **Actions → Deploy to Azure App Service → Run workflow** (or push to `main`). The
+workflow runs the agent tests, builds `web/`, assembles the package with
+`scripts/build_site.py` (server, agents, data, studio, gzip copies) and deploys it.
+Until the secret and variable exist, the deploy step is skipped.
+
+## 4. Check
+
+```bash
+curl -X POST https://<app>.azurewebsites.net/api/explain -H "Content-Type: application/json" -d "{\"t\": 210, \"mode\": \"analyst\", \"lang\": \"en\"}"
+```
+
+Expect `"engine": "foundry"`, the offside of N. Pellegrue at 03:32 and four trace steps.
+Logs: `az webapp log tail -n <app> -g rg-pitchlens`.
 
 ## Monitoring (optional)
 
-Static Web App → **Settings → Application Insights** → enable. Each request logs one
-line `pitchlens.explain {...}` with the moment type, engine, model calls, tokens and
-per-agent status and duration:
+Web App → **Monitoring → Application Insights** → turn on. Each request logs one line
+`pitchlens.explain {...}` with the moment type, engine, model calls, tokens, total time
+and per-agent status and duration:
 
 ```kusto
 traces | where message startswith "pitchlens.explain" | order by timestamp desc
 ```
 
-## 3. Check the deployment
+## Precomputed answers
+
+With the model settings in your environment or `api/local.settings.json`:
 
 ```bash
-curl -X POST https://<your-site>.azurestaticapps.net/api/explain -H "Content-Type: application/json" -d "{\"t\": 207, \"mode\": \"analyst\", \"lang\": \"en\"}"
+python api/precompute.py          # every key moment and a recap every 30 s, EN/PL/ES, analyst/fan
 ```
 
-Expect `"status": "ok"`, the offside of N. Pellegrue at 03:32 and four trace steps.
+The answers (with their agent trace) go to `api/data/precomputed.json`; commit it and the
+server returns them instantly. Anything else (favourite player, drawn zones) still runs
+the agents live.
 
 ## Local development
 
 ```bash
-python api/local_server.py      # agents on http://localhost:7071 (stdlib only)
+python api/server.py            # agents on http://localhost:7071 (stdlib only)
 cd web && npm run dev           # studio on http://localhost:5173, /api proxied to 7071
 ```
 
-`start.bat` starts both. To use the model locally, copy
-`api/local.settings.example.json` to `api/local.settings.json` and fill in the values.
+`start.bat` starts both. To run exactly what is deployed:
+
+```bash
+cd web && npm run build && cd ..
+python scripts/build_site.py
+python site/server.py           # studio and API on http://localhost:7071
+```
 
 Tests (no Azure needed; a scripted model exercises the Verifier's revision loop):
 
@@ -93,24 +106,19 @@ cd api
 python -m unittest discover -s tests -v
 ```
 
-After regenerating the synthetic match, refresh the function's copy:
-
-```bash
-python api/build_data.py
-```
+After regenerating the synthetic match, refresh the agents' copy: `python api/build_data.py`.
 
 ## How the agents work
 
 | agent | job | model calls |
 |---|---|---|
-| Analyst | calls tools (max 6) and picks the 3 to 6 facts that matter | 1 to 3 |
-| Explainer | 2 to 4 sentences on why the moment matters; every sentence cites fact ids | 1 (+1 revision) |
+| Analyst | calls tools (max 6, all in its first turn) and picks the 3 to 6 facts that matter | 1 to 2 |
+| Explainer | 2 to 4 sentences on why the moment matters (3 to 5 for a recap); every sentence cites fact ids | 1 (+1 revision) |
 | Verifier | code checks every number, clock time and player name against the cited facts, then the model checks logic; one revision, then unsupported sentences are dropped | 1 to 2 |
 | Personalizer | analyst or fan style, favourite team and player, EN / PL / ES; its output is checked again so it cannot add facts | 1 (+1 fix) |
 
 Tools (`api/pitchlens_agents/tools.py`) compute every number: `get_events`,
 `get_player_stats`, `get_team_shape`, `get_offside_state`, `get_possession`,
-`get_zone_activity` (for zones the pundit drew). Each step falls back to
-templates if the model fails, and the whole request stays under a 38 s budget
-(Static Web Apps stops API calls at about 45 s). Answers are cached per
-moment and audience.
+`get_zone_activity`, `get_momentum`, `get_match_summary`. Each step falls back to
+templates if the model fails, and a request stays within a 38 s budget. Answers are
+cached per moment and audience.
