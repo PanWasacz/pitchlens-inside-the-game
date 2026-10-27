@@ -75,6 +75,7 @@ class App {
   private readonly goals: MatchEvent[];
   private readonly spells: Spell[];
   private readonly feed: FeedItem[];
+  private readonly datasetKey: string;
 
   private w = 0;
   private h = 0;
@@ -104,6 +105,7 @@ class App {
   private explaining = 0;
 
   constructor(private readonly match: Match, ds: Dataset) {
+    this.datasetKey = ds.key;
     this.video = ds.video ? $<HTMLVideoElement>("#video") : null;
     if (this.video && ds.video) this.video.src = ds.video;
     const ev = match.events;
@@ -454,6 +456,7 @@ class App {
     out.innerHTML = `<p class="muted ai-wait">Analyst → Explainer → Verifier → Personalizer…</p>`;
     const body = {
       task,
+      dataset: this.datasetKey,
       t: this.t,
       mode: this.audience,
       team: $<HTMLSelectElement>("#aiTeam").value || null,

@@ -20,9 +20,14 @@ def clock(t: float) -> str:
 
 class Match:
     def __init__(self, data_dir: Path = DATA_DIR):
+        self.data_dir = data_dir.resolve()
+        self.is_demo = self.data_dir == DATA_DIR.resolve()
         self.meta = json.loads((data_dir / "meta.json").read_text(encoding="utf-8"))
         self.events: list[dict] = json.loads((data_dir / "events.json").read_text(encoding="utf-8"))
-        with gzip.open(data_dir / "frames.jsonl.gz", "rt", encoding="utf-8") as f:
+        compressed = data_dir / "frames.jsonl.gz"
+        frame_path = compressed if compressed.exists() else data_dir / "frames.jsonl"
+        opener = gzip.open if frame_path.suffix == ".gz" else open
+        with opener(frame_path, "rt", encoding="utf-8") as f:
             self.frames: list[dict] = [json.loads(line) for line in f if line.strip()]
         self.fps: float = self.meta["fps"]
         self.length: float = self.meta["pitch"]["length"]
@@ -96,3 +101,25 @@ class Match:
 @lru_cache(maxsize=1)
 def demo_match() -> Match:
     return Match()
+
+
+SCENARIOS_DIR = DATA_DIR / "scenarios"
+if not SCENARIOS_DIR.is_dir():
+    SCENARIOS_DIR = DATA_DIR.parent.parent / "web" / "public" / "data" / "scenarios"
+
+DATASET_DIRS = {
+    "demo": DATA_DIR,
+    "possession-battle": SCENARIOS_DIR / "scenario-01-possession-battle",
+    "offside-attack": SCENARIOS_DIR / "scenario-02-offside-attack",
+    "transition-attack": SCENARIOS_DIR / "scenario-03-transition-attack",
+}
+
+
+@lru_cache(maxsize=8)
+def dataset_match(key: str) -> Match:
+    data_dir = DATASET_DIRS.get(key)
+    if data_dir is None:
+        raise ValueError("unknown dataset")
+    if not (data_dir / "meta.json").is_file():
+        raise FileNotFoundError(f"dataset data is missing: {key}")
+    return Match(data_dir)

@@ -1,0 +1,212 @@
+{
+  "source": "synthetic",
+  "generator": "pitchlens_synth 0.1.0",
+  "seed": 99,
+  "pitch": {
+    "length": 105.0,
+    "width": 68.0
+  },
+  "fps": 10,
+  "duration": 600,
+  "frame_count": 6001,
+  "teams": {
+    "home": {
+      "name": "Pinecrest Wanderers",
+      "short": "PCW",
+      "formation": "4-4-2",
+      "colors": {
+        "primary": "#2563EB",
+        "secondary": "#DBEAFE",
+        "goalkeeper": "#FACC15"
+      },
+      "attacks": "+x",
+      "players": [
+        {
+          "id": "H01",
+          "number": 1,
+          "name": "A. Calder",
+          "position": "GK",
+          "role": "GK"
+        },
+        {
+          "id": "H03",
+          "number": 3,
+          "name": "M. Ibarra",
+          "position": "LB",
+          "role": "DF"
+        },
+        {
+          "id": "H05",
+          "number": 5,
+          "name": "D. Okafor",
+          "position": "LCB",
+          "role": "DF"
+        },
+        {
+          "id": "H06",
+          "number": 6,
+          "name": "R. Bellamy",
+          "position": "RCB",
+          "role": "DF"
+        },
+        {
+          "id": "H02",
+          "number": 2,
+          "name": "T. Novak",
+          "position": "RB",
+          "role": "DF"
+        },
+        {
+          "id": "H08",
+          "number": 8,
+          "name": "S. Moretti",
+          "position": "LM",
+          "role": "MF"
+        },
+        {
+          "id": "H04",
+          "number": 4,
+          "name": "J. Adebayo",
+          "position": "LCM",
+          "role": "MF"
+        },
+        {
+          "id": "H10",
+          "number": 10,
+          "name": "L. Varga",
+          "position": "RCM",
+          "role": "MF"
+        },
+        {
+          "id": "H11",
+          "number": 11,
+          "name": "P. Sato",
+          "position": "RM",
+          "role": "MF"
+        },
+        {
+          "id": "H09",
+          "number": 9,
+          "name": "N. Fraser",
+          "position": "LS",
+          "role": "FW"
+        },
+        {
+          "id": "H07",
+          "number": 7,
+          "name": "E. Duarte",
+          "position": "RS",
+          "role": "FW"
+        }
+      ]
+    },
+    "away": {
+      "name": "Golden Vale SC",
+      "short": "GVS",
+      "formation": "4-3-3",
+      "colors": {
+        "primary": "#DC2626",
+        "secondary": "#FEF2F2",
+        "goalkeeper": "#34D399"
+      },
+      "attacks": "-x",
+      "players": [
+        {
+          "id": "A01",
+          "number": 1,
+          "name": "V. Lindholm",
+          "position": "GK",
+          "role": "GK"
+        },
+        {
+          "id": "A03",
+          "number": 3,
+          "name": "K. Mensah",
+          "position": "LB",
+          "role": "DF"
+        },
+        {
+          "id": "A04",
+          "number": 4,
+          "name": "I. Petrov",
+          "position": "LCB",
+          "role": "DF"
+        },
+        {
+          "id": "A05",
+          "number": 5,
+          "name": "C. Dlamini",
+          "position": "RCB",
+          "role": "DF"
+        },
+        {
+          "id": "A02",
+          "number": 2,
+          "name": "O. Becker",
+          "position": "RB",
+          "role": "DF"
+        },
+        {
+          "id": "A11",
+          "number": 11,
+          "name": "Y. Kowalski",
+          "position": "LCM",
+          "role": "MF"
+        },
+        {
+          "id": "A06",
+          "number": 6,
+          "name": "H. Silva",
+          "position": "DM",
+          "role": "MF"
+        },
+        {
+          "id": "A08",
+          "number": 8,
+          "name": "B. Laurent",
+          "position": "RCM",
+          "role": "MF"
+        },
+        {
+          "id": "A07",
+          "number": 7,
+          "name": "D. Okoye",
+          "position": "LW",
+          "role": "FW"
+        },
+        {
+          "id": "A09",
+          "number": 9,
+          "name": "F. Marin",
+          "position": "ST",
+          "role": "FW"
+        },
+        {
+          "id": "A10",
+          "number": 10,
+          "name": "G. Aranda",
+          "position": "RW",
+          "role": "FW"
+        }
+      ]
+    }
+  },
+  "final_score": {
+    "home": 1,
+    "away": 0
+  },
+  "officials": [
+    {
+      "id": "REF",
+      "role": "referee"
+    },
+    {
+      "id": "AR1",
+      "role": "assistant"
+    },
+    {
+      "id": "AR2",
+      "role": "assistant"
+    }
+  ]
+}
