@@ -1,11 +1,14 @@
-// Records the demo video (about 1:50, 1920x1080, synthetic match only) -> scripts/demo/out/pitchlens-demo.webm
+// Records the demo video (under 2 minutes, 1920x1080, synthetic match only) -> scripts/demo/out/pitchlens-demo.webm
 //
 //   node video.mjs                                   # local studio (npm run dev + python api/local_server.py)
 //   PITCHLENS_URL=https://<site>.azurestaticapps.net node video.mjs   # deployed site with the real model
 //
-// Captions are burnt in, so the video works without a voice-over.
+// Captions are burnt in, so the video also works without a voice-over. With a voice-over
+// cut into out/voice/01.wav ... 11.wav (durations in out/voice/voice.json), every segment
+// lasts at least as long as its line, and out/timeline.json records when each segment
+// starts so mix.mjs can lay the voice over the picture.
 
-import { mkdirSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import {
   app, ask, audience, clearOverlays, draw, insights, launch, openStudio, pause, play, seek, select, toggle, view,
 } from "./lib.mjs";
@@ -19,20 +22,44 @@ const REPO = "github.com/PanWasacz/pitchlens-inside-the-game";
 const browser = await launch();
 const context = await browser.newContext({ viewport: SIZE, recordVideo: { dir: outPath(""), size: SIZE } });
 const page = await context.newPage();
+const t0 = Date.now(); // the recording starts with the page
 const wait = (s) => page.waitForTimeout(s * 1000);
 
-// Full-screen title card and a caption bar, injected into the page.
-async function card(title, sub, seconds) {
-  await page.evaluate(([t, s]) => {
-    const el = document.createElement("div");
-    el.id = "demoCard";
-    el.style.cssText = "position:fixed;inset:0;z-index:99;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#05080f;color:#f4f6fb;text-align:center;font-family:Barlow Condensed,Arial Narrow,sans-serif";
-    el.innerHTML = `<div style="font-size:84px;font-weight:700;letter-spacing:.06em">${t}</div><div style="font:500 30px Inter,system-ui,sans-serif;color:rgba(244,246,251,.7);max-width:1300px;line-height:1.5">${s}</div>`;
-    document.body.append(el);
-  }, [title, sub]);
-  await wait(seconds);
-  await page.evaluate(() => document.querySelector("#demoCard")?.remove());
+const VOICE_FILE = outPath("voice/voice.json");
+const voice = existsSync(VOICE_FILE) ? JSON.parse(readFileSync(VOICE_FILE, "utf8")) : [];
+const LEAD = 0.3; // the line starts this long after the picture changes
+const TAIL = 0.5; // and the picture holds this long after the line ends
+const starts = [];
+
+/**
+ * One narrated segment: run its actions, then hold until its voice line has finished.
+ * The recorder's clock drifts from wall time, so each segment start also flips an 8x8 px
+ * sync mark in the bottom-right corner; mix.mjs finds the flips in the video itself.
+ */
+async function seg(n, body) {
+  await page.evaluate((k) => {
+    let el = document.querySelector("#syncMark");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "syncMark";
+      el.style.cssText = "position:fixed;right:0;bottom:0;width:8px;height:8px;z-index:100";
+      document.body.append(el);
+    }
+    el.style.background = k % 2 ? "#ffffff" : "#000000";
+  }, n);
+  const start = (Date.now() - t0) / 1000;
+  starts.push({ n, start: start + LEAD });
+  const d = voice[n - 1] ?? 0;
+  await body(d);
+  const left = start + LEAD + d + TAIL - (Date.now() - t0) / 1000;
+  if (left > 0) await wait(left);
 }
+
+const CARD_STYLE =
+  "position:fixed;inset:0;z-index:99;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#05080f;color:#f4f6fb;text-align:center;font-family:Barlow Condensed,Arial Narrow,sans-serif";
+const cardHtml = (t, s) =>
+  `<div style="font-size:84px;font-weight:700;letter-spacing:.06em">${t}</div><div style="font:500 30px Inter,system-ui,sans-serif;color:rgba(244,246,251,.7);max-width:1300px;line-height:1.5">${s}</div>`;
+const LOGO = 'PITCHLENS <span style="color:#2bf5b6">STUDIO</span>';
 
 async function caption(text) {
   await page.evaluate((t) => {
@@ -40,7 +67,8 @@ async function caption(text) {
     if (!el) {
       el = document.createElement("div");
       el.id = "demoCaption";
-      el.style.cssText = "position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:98;padding:12px 26px;border-radius:10px;background:rgba(5,8,15,.88);color:#fff;font:600 28px Inter,system-ui,sans-serif;max-width:1400px;text-align:center;border:1px solid rgba(43,245,182,.5)";
+      el.style.cssText =
+        "position:fixed;left:50%;bottom:110px;transform:translateX(-50%);z-index:98;padding:12px 26px;border-radius:10px;background:rgba(5,8,15,.88);color:#fff;font:600 28px Inter,system-ui,sans-serif;max-width:1400px;text-align:center;border:1px solid rgba(43,245,182,.5)";
       document.body.append(el);
     }
     el.textContent = t;
@@ -48,139 +76,167 @@ async function caption(text) {
   }, text);
 }
 
-// 0:00 Title card, shown from the first frame so the loading screen never appears.
-const TITLE = ['PITCHLENS <span style="color:#2bf5b6">STUDIO</span>',
-  "Telestration and explainable match intelligence for TV pundits and fans<br>Synthetic match · fictional teams and players"];
-await context.addInitScript(([t, s]) => {
-  document.addEventListener("DOMContentLoaded", () => {
-    const el = document.createElement("div");
-    el.id = "demoCard";
-    el.style.cssText = "position:fixed;inset:0;z-index:99;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:#05080f;color:#f4f6fb;text-align:center;font-family:Barlow Condensed,Arial Narrow,sans-serif";
-    el.innerHTML = `<div style="font-size:84px;font-weight:700;letter-spacing:.06em">${t}</div><div style="font:500 30px Inter,system-ui,sans-serif;color:rgba(244,246,251,.7);max-width:1300px;line-height:1.5">${s}</div>`;
-    document.body.append(el);
-  });
-}, TITLE);
+const scrollToAnswer = () =>
+  page.evaluate(() => document.querySelector("#explain").scrollIntoView({ block: "start", behavior: "smooth" }));
+
+// 1. Title card, shown from the first frame so the loading screen never appears.
+await context.addInitScript(
+  ([style, html]) => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const el = document.createElement("div");
+      el.id = "demoCard";
+      el.style.cssText = style;
+      el.innerHTML = html;
+      document.body.append(el);
+    });
+  },
+  [CARD_STYLE, cardHtml(LOGO, "Telestration and explainable match intelligence for TV pundits and fans<br>Synthetic match · fictional teams and players")],
+);
 await openStudio(page);
 await toggle(page, "feed", false);
 await seek(page, 3);
-await wait(4);
+await seg(1, () => wait(3));
 await page.evaluate(() => document.querySelector("#demoCard")?.remove());
 
-// 0:06 Broadcast view, goal
-await caption("Broadcast view of a synthetic match, generated by our own simulator");
-await toggle(page, "feed", true);
-await play(page, 1);
-await wait(7);
-await caption("Live feed: goals, saves, offsides, sprints and momentum swings appear as the match plays");
-await wait(6);
-await pause(page);
+// 2. Broadcast view, goal, live feed
+await seg(2, async (d) => {
+  await caption("Broadcast view of a synthetic match, generated by our own simulator");
+  await toggle(page, "feed", true);
+  await play(page, 1);
+  // The recorder loses about a quarter of the time while the match plays: give it more.
+  await wait(Math.max(6, d * 0.55));
+  await caption("Live feed: goals, saves, offsides, sprints and momentum swings appear as the match plays");
+  await wait(Math.max(6, d * 0.65));
+  await pause(page);
+});
 
-// 0:19 Tracking and distances
-await caption("Click players: ring, trail, speed and distance; distances between them");
+// 3. Tracking and distances
 await toggle(page, "feed", false);
 await clearOverlays(page);
 await seek(page, 418);
-await select(page, ["H09", "A05"]);
-await toggle(page, "distances", true);
-await wait(5);
+await seg(3, async () => {
+  await caption("Click players: ring, trail, speed and distance; distances between them");
+  await select(page, ["H09", "A05"]);
+  await toggle(page, "distances", true);
+  await wait(5);
+});
 await toggle(page, "distances", false);
 await select(page, []);
 
-// 0:24 Shapes and tactical view
-await caption("Team shapes, then the tactical view");
+// 4. Shapes and tactical view
 await seek(page, 150);
-await toggle(page, "shapeHome", true);
-await toggle(page, "shapeAway", true);
-await wait(3);
-await view(page, "top");
-await wait(3);
+await seg(4, async (d) => {
+  await caption("Team shapes, then the tactical view");
+  await toggle(page, "shapeHome", true);
+  await toggle(page, "shapeAway", true);
+  await wait(Math.max(2.5, d * 0.45));
+  await view(page, "top");
+  await wait(2);
+});
 
-// 0:31 Drawing
-await caption("Pundit drawings are stored in pitch metres: they stay on the grass in every view");
-await draw(page, [{ kind: "zone", pts: [[70, 18], [92, 18], [92, 50], [70, 50]], color: "#FFE14D" }]);
-await wait(1.5);
-await draw(page, [
-  { kind: "zone", pts: [[70, 18], [92, 18], [92, 50], [70, 50]], color: "#FFE14D" },
-  { kind: "arrow", a: [55, 30], b: [80, 22], color: "#FFFFFF" },
-]);
-await wait(2);
-await view(page, "main");
-await wait(3);
+// 5. Drawing
+await seg(5, async () => {
+  await caption("Pundit drawings are stored in pitch metres: they stay on the grass in every view");
+  const zone = { kind: "zone", pts: [[70, 18], [92, 18], [92, 50], [70, 50]], color: "#FFE14D" };
+  await draw(page, [zone]);
+  await wait(1.5);
+  await draw(page, [zone, { kind: "arrow", a: [55, 30], b: [80, 22], color: "#FFFFFF" }]);
+  await wait(2);
+  await view(page, "main");
+  await wait(2.5);
+});
 await draw(page, []);
 await toggle(page, "shapeHome", false);
 await toggle(page, "shapeAway", false);
 
-// 0:40 Offside
-await caption("Offside line at the moment of the pass, with the attacker beyond it");
+// 6. Offside
 await seek(page, 208);
 await toggle(page, "offside", true);
-await play(page, 1);
-await wait(8);
-await pause(page);
+await seg(6, async (d) => {
+  await caption("Offside line at the moment of the pass, with the attacker beyond it");
+  await play(page, 1);
+  await wait(Math.max(8, d));
+  await pause(page);
+});
 await toggle(page, "offside", false);
 
-// 0:49 Player focus
-await caption("Player focus: the camera follows one player, with live stats and only their moments");
+// 7. Player focus
 await clearOverlays(page);
 await toggle(page, "feed", true);
 await seek(page, 414);
 await select(page, ["H09"]);
 await app(page, (a) => a.setFocus(true));
-await play(page, 2);
-await wait(6);
-await pause(page);
-await wait(2);
+await seg(7, async () => {
+  await caption("Player focus: the camera follows one player, with live stats and only their moments");
+  await play(page, 2);
+  await wait(6);
+  await pause(page);
+});
 await app(page, (a) => a.setFocus(false));
 await select(page, []);
 await toggle(page, "feed", false);
 await clearOverlays(page);
 
-// 0:58 AI analyst
-await caption("AI analyst: four agents on Microsoft Foundry explain why the moment matters");
+// 8. AI analyst
 await seek(page, 207.4);
-await insights(page, true);
-await audience(page, "analyst", "en");
-await ask(page);
-await page.evaluate(() => document.querySelector("#explain").scrollIntoView({ block: "start", behavior: "smooth" }));
-await wait(5);
-await caption("Every claim is backed by computed facts; the Verifier checks numbers, names and logic");
-await page.evaluate(() => {
-  const d = document.querySelector(".ai-trace");
-  d.open = true;
-  d.scrollIntoView({ block: "start", behavior: "smooth" });
+await seg(8, async (d) => {
+  await caption("AI analyst: four agents on Microsoft Foundry explain why the moment matters");
+  await insights(page, true);
+  await audience(page, "analyst", "en");
+  await ask(page);
+  await scrollToAnswer();
+  await wait(Math.max(5, d * 0.4));
+  await caption("Every claim is backed by computed facts; the Verifier checks numbers, names and logic");
+  await page.evaluate(() => {
+    const t = document.querySelector(".ai-trace");
+    t.open = true;
+    t.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+  await wait(5);
 });
-await wait(6);
 
-// 1:09 Personalisation
-await caption("Same facts, different viewer: a Kestrel Bay fan, in Polish");
-await audience(page, "fan", "pl", "away");
-await ask(page);
-await page.evaluate(() => document.querySelector("#explain").scrollIntoView({ block: "start", behavior: "smooth" }));
-await wait(5);
-await caption("…or in Spanish");
-await audience(page, "fan", "es", "away");
-await ask(page);
-await wait(4);
+// 9. Personalisation
+await seg(9, async (d) => {
+  await caption("Same facts, different viewer: a Kestrel Bay fan, in Polish");
+  await audience(page, "fan", "pl", "away");
+  await ask(page);
+  await scrollToAnswer();
+  await wait(Math.max(3.5, d * 0.55));
+  await caption("…or in Spanish");
+  await audience(page, "fan", "es", "away");
+  await ask(page);
+  await wait(2.5);
+});
 
-// 1:20 Recap and momentum
-await caption("Automated recap of the match so far, and the control-vs-chaos momentum strip");
+// 10. Recap and momentum
 await seek(page, 600);
-await audience(page, "analyst", "en");
-await ask(page, "#recap");
-await page.evaluate(() => document.querySelector("#explain").scrollIntoView({ block: "start", behavior: "smooth" }));
-await wait(8);
+await seg(10, async () => {
+  await caption("Automated recap of the match so far, and the control-vs-chaos momentum strip");
+  await audience(page, "analyst", "en");
+  await ask(page, "#recap");
+  await scrollToAnswer();
+  await wait(6);
+});
 await caption("");
 
-// 1:30 Outro
-await card(
-  'PITCHLENS <span style="color:#2bf5b6">STUDIO</span>',
-  `Microsoft Foundry · Azure Static Web Apps · Azure Functions · Application Insights · GitHub Actions<br><br>${REPO}`,
-  6,
+// 11. Outro
+await page.evaluate(
+  ([style, html]) => {
+    const el = document.createElement("div");
+    el.id = "demoCard";
+    el.style.cssText = style;
+    el.innerHTML = html;
+    document.body.append(el);
+  },
+  [CARD_STYLE, cardHtml(LOGO, `Microsoft Foundry · Azure Static Web Apps · Azure Functions · Application Insights · GitHub Actions<br><br>${REPO}`)],
 );
+await seg(11, () => wait(4));
+await wait(1);
 
 const video = page.video();
 await context.close();
 await browser.close();
 const final = outPath("pitchlens-demo.webm");
 renameSync(await video.path(), final);
-console.log("saved", final);
+writeFileSync(outPath("timeline.json"), JSON.stringify(starts, null, 1));
+console.log("saved", final, `(${((Date.now() - t0) / 1000).toFixed(1)} s)`);
