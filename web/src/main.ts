@@ -20,6 +20,22 @@ const $$ = <T extends HTMLElement = HTMLElement>(sel: string) => [...document.qu
 
 type View = "main" | "recon" | "top";
 type Toggle = "shapeHome" | "shapeAway" | "offside" | "distances";
+type Audience = "analyst" | "fan";
+
+interface Explanation {
+  status: string;
+  engine: "foundry" | "fallback";
+  model: string | null;
+  moment: { type: string; t: number; clock: string };
+  title: string;
+  text: string;
+  evidence: { id: string; label: string; tool: string; t: number | null }[];
+  trace: { agent: string; status: string; summary: string; details: string[]; ms: number }[];
+  cached: boolean;
+  message?: string;
+}
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 const DRAW_COLORS = ["#FFE14D", "#FFFFFF", "#2BF5B6", "#FF5A5F"];
 const VIEW_ANIM_MS = 650;
@@ -76,6 +92,8 @@ class App {
   private lastNow = performance.now();
   private bannerTimer = 0;
   private scoreSecond = -1;
+  private audience: Audience = "analyst";
+  private explaining = 0;
 
   constructor(private readonly match: Match, ds: Dataset) {
     this.video = ds.video ? $<HTMLVideoElement>("#video") : null;
@@ -134,6 +152,14 @@ class App {
       $("#insightsBtn").setAttribute("aria-pressed", String(!panel.hidden));
     };
     $("#explain").onclick = () => this.explain();
+    for (const b of $$<HTMLButtonElement>("[data-audience]")) {
+      b.onclick = () => {
+        this.audience = b.dataset.audience as Audience;
+        for (const o of $$("[data-audience]")) o.setAttribute("aria-pressed", String(o === b));
+      };
+    }
+    $('#aiTeam option[value="home"]').textContent = `${this.match.meta.teams.home.short} fan`;
+    $('#aiTeam option[value="away"]').textContent = `${this.match.meta.teams.away.short} fan`;
     $("#helpBtn").onclick = () => ($("#help").hidden = !$("#help").hidden);
     $("#help").onclick = () => ($("#help").hidden = true);
     this.buildMoments();
@@ -282,21 +308,84 @@ class App {
     this.bannerTimer = window.setTimeout(() => b.classList.remove("show"), 4000);
   }
 
+  /** Pundit zones (zone and circle drawings) as pitch rectangles for the Analyst. */
+  private drawnZones() {
+    const zones = [];
+    for (const sh of this.drawings.shapes) {
+      if (sh.kind === "zone" && sh.pts.length > 2) {
+        const xs = sh.pts.map((p) => p[0]);
+        const ys = sh.pts.map((p) => p[1]);
+        zones.push({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) });
+      } else if (sh.kind === "circle" && sh.r > 1) {
+        zones.push({ x0: sh.c[0] - sh.r, y0: sh.c[1] - sh.r, x1: sh.c[0] + sh.r, y1: sh.c[1] + sh.r });
+      }
+    }
+    return zones.slice(-3);
+  }
+
   private async explain() {
     const out = $("#explainOut");
-    out.textContent = "Asking the analyst…";
+    if (this.match.meta.source !== "synthetic") {
+      out.innerHTML = `<p class="muted">The AI analyst runs on the synthetic demo match.</p>`;
+      return;
+    }
+    const ticket = ++this.explaining;
+    const btn = $<HTMLButtonElement>("#explain");
+    btn.disabled = true;
+    out.innerHTML = `<p class="muted ai-wait">Analyst → Explainer → Verifier → Personalizer…</p>`;
     const body = {
-      source: this.match.meta.source,
       t: this.t,
-      selected: this.selected.map((i) => this.match.players[i].id),
-      events: this.match.events.filter((e) => Math.abs(e.t - this.t) < 10),
+      mode: this.audience,
+      team: $<HTMLSelectElement>("#aiTeam").value || null,
+      lang: $<HTMLSelectElement>("#aiLang").value,
+      player: this.selected.length ? this.match.players[this.selected[0]].id : null,
+      zones: this.drawnZones(),
     };
+    let data: Explanation | null = null;
+    let failed = "";
     try {
       const r = await fetch("/api/explain", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data = (await r.json().catch(() => null)) as { message?: string; text?: string } | null;
-      out.textContent = r.ok && data?.text ? data.text : (data?.message ?? "Agent explanations are not connected yet.");
+      data = (await r.json().catch(() => null)) as Explanation | null;
+      if (!r.ok || data?.status !== "ok") failed = data?.message ?? `The analyst service is not reachable (HTTP ${r.status}).`;
     } catch {
-      out.textContent = "Agent explanations are not connected yet.";
+      failed = "The analyst service is not reachable.";
+    }
+    if (ticket !== this.explaining) return;
+    btn.disabled = false;
+    if (failed || !data) {
+      out.innerHTML = `<p class="muted">${esc(failed)}</p>`;
+      return;
+    }
+    this.renderExplanation(out, data);
+    btn.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+
+  private renderExplanation(out: HTMLElement, d: Explanation) {
+    const engine = d.engine === "foundry" ? `Microsoft Foundry · ${d.model ?? "model"}` : "Template fallback (no model)";
+    const steps = d.trace
+      .map(
+        (s) =>
+          `<li><span class="ag">${esc(s.agent)}</span><span class="st st-${esc(s.status)}">${esc(s.status)}</span>` +
+          `<span class="ms">${s.ms} ms</span><div>${esc(s.summary)}</div>` +
+          (s.details.length ? `<ul>${s.details.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "") +
+          `</li>`,
+      )
+      .join("");
+    out.innerHTML =
+      `<div class="ai-title"><span class="mt">${esc(d.moment.clock)}</span>${esc(d.title)}</div>` +
+      `<p class="ai-text"></p>` +
+      `<h3>Evidence</h3><div class="ai-evidence"></div>` +
+      `<details class="ai-trace"><summary>How this was produced</summary><ol>${steps}</ol>` +
+      `<p class="muted">${esc(engine)}${d.cached ? " · cached" : ""}</p></details>`;
+    $(".ai-text").textContent = d.text;
+    const list = $(".ai-evidence");
+    for (const ev of d.evidence) {
+      const b = document.createElement("button");
+      b.className = "moment evidence";
+      b.innerHTML = `<span class="mk">${esc(ev.id)}</span><span class="who">${esc(ev.label)}</span>`;
+      b.title = ev.t === null ? ev.tool : `${ev.tool} · jump to ${fmtClock(ev.t)}`;
+      if (ev.t !== null) b.onclick = () => this.seek(Math.max(0, (ev.t as number) - 3));
+      list.append(b);
     }
   }
 

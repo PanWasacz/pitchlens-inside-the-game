@@ -68,9 +68,25 @@
       <h2>Key moments</h2>
       <div id="moments"></div>
       <h2>AI analyst</h2>
-      <p class="muted">Explanations of the current moment and selected players will appear here.</p>
+      <p class="muted">Four agents explain the moment on screen: Analyst, Explainer, Verifier, Personalizer.</p>
+      <div class="ai-controls">
+        <div class="group" role="group" aria-label="Audience">
+          <button data-audience="analyst" aria-pressed="true">Analyst</button>
+          <button data-audience="fan" aria-pressed="false">Fan</button>
+        </div>
+        <select id="aiTeam" aria-label="Favourite team">
+          <option value="">Neutral</option>
+          <option value="home">Home</option>
+          <option value="away">Away</option>
+        </select>
+        <select id="aiLang" aria-label="Language">
+          <option value="en">EN</option>
+          <option value="pl">PL</option>
+          <option value="es">ES</option>
+        </select>
+      </div>
       <button id="explain">Explain this moment</button>
-      <div id="explainOut" class="muted"></div>
+      <div id="explainOut" aria-live="polite"></div>
     </aside>
 
     <div id="help" class="panel" hidden>

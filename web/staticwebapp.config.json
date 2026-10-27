@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/staticwebapp.config.json",
+  "platform": {
+    "apiRuntime": "python:3.11"
+  },
+  "mimeTypes": {
+    ".jsonl": "application/x-ndjson"
+  },
+  "routes": [
+    {
+      "route": "/data/*",
+      "headers": { "cache-control": "public, max-age=3600" }
+    },
+    {
+      "route": "/assets/*",
+      "headers": { "cache-control": "public, max-age=31536000, immutable" }
+    },
+    {
+      "route": "/local/*",
+      "statusCode": 404
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/data/*", "/assets/*", "/api/*", "*.{json,jsonl,js,css,svg,png,ico}"]
+  },
+  "globalHeaders": {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+  }
+}

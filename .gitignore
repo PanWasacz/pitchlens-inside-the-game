@@ -25,3 +25,8 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Azure Functions (keys live only in Azure / this local file)
+api/local.settings.json
+api/.python_packages/
+.azurite/

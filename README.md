@@ -14,7 +14,7 @@ Insights Engine for Premier League Studio*).
 | `pitchlens_synth/` | synthetic match generator: 22 players + ball, formations, passes, shots, tackles |
 | `web/` | broadcast UI (Vite + TypeScript + canvas). Demo data lives in `web/public/data/demo/` |
 | `pitchlens_cv/` | CV pipeline: detection + tracking, team colours, pitch homography, export (local video only) |
-| `api/` | *(planned)* minimal API, including a stub `/api/explain` for future AI explanations |
+| `api/` | Azure Function `/api/explain`: four agents (Analyst, Explainer, Verifier, Personalizer) on Microsoft Foundry, with fact tools and a template fallback |
 | `docs/schema.md` | shared data format (`meta.json`, `frames.jsonl`, `events.json`) |
 
 ## Generate a synthetic match
@@ -27,10 +27,13 @@ python -m pitchlens_synth --seed 20 --duration 600 --hz 10 --out web/public/data
 ## Run the studio locally
 
 ```bash
+python api/local_server.py   # AI analyst API on :7071 (optional, stdlib only)
 cd web
 npm install
 npm run dev        # http://localhost:5173
 ```
+
+Deployment to Azure Static Web Apps and Microsoft Foundry: see `docs/deploy.md`.
 
 Controls: click/tap a player to track them (several at once), toggle team shapes,
 offside line and distances in the top bar, draw with the tools on the left

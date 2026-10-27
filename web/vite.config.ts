@@ -39,16 +39,15 @@ function devOnly(): Plugin {
     name: "pitchlens-dev",
     configureServer(server) {
       server.middlewares.use("/local", serveLocalMatch);
-      // Placeholder for the future agent explanations service.
-      server.middlewares.use("/api/explain", (_req, res) => {
-        res.writeHead(501, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "not_implemented", message: "Agent explanations are coming soon." }));
-      });
     },
   };
 }
 
 export default defineConfig({
   plugins: [devOnly()],
-  server: { host: true },
+  server: {
+    host: true,
+    // The explain agents run in api/ (python api/local_server.py, or `swa start` / `func start`).
+    proxy: { "/api": "http://localhost:7071" },
+  },
 });
