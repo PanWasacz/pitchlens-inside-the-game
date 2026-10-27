@@ -268,11 +268,25 @@ class App {
     };
     $("#reportBtn").onclick = () => this.toggleReport();
     $("#reportClose").onclick = () => this.toggleReport(false);
-    $("#reportDownload").onclick = async () => {
-      // The PDF is the LaTeX report compiled at build time (scripts/build_reports.py).
-      if (!this.reportFiles) await this.findReportFiles();
-      if (this.reportFiles?.pdf) window.location.href = `${this.reportFiles.base}report.pdf`;
-      else $("#reportOut").insertAdjacentHTML("afterbegin", `<p class="report-callout">The PDF report is built during deployment and is not available here.</p>`);
+    $("#reportDownload").onclick = () => {
+      // The PDF is the LaTeX report compiled at build time (scripts/build_reports.py), opened in a new tab.
+      const missing = () =>
+        $("#reportOut").insertAdjacentHTML("afterbegin", `<p class="report-callout">The PDF report is built during deployment and is not available here.</p>`);
+      if (this.reportFiles) {
+        if (this.reportFiles.pdf) window.open(`${this.reportFiles.base}report.pdf`, "_blank", "noopener");
+        else missing();
+        return;
+      }
+      // Not checked yet: open the tab inside the click (popup blockers allow that), fill it in after.
+      const tab = window.open("", "_blank");
+      if (tab) tab.opener = null;
+      void this.findReportFiles().then(() => {
+        if (this.reportFiles?.pdf && tab) tab.location.href = `${this.reportFiles.base}report.pdf`;
+        else {
+          tab?.close();
+          missing();
+        }
+      });
     };
     $("#explain").onclick = () => this.explain("moment");
     $("#recap").onclick = () => this.explain("recap");

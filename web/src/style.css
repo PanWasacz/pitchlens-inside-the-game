@@ -266,9 +266,12 @@ body.momentum-open #tools {
   right: 12px;
   top: 64px;
   width: min(520px, calc(100% - 24px));
-  max-height: calc(100% - 110px);
+  /* Stop above the minimap (bottom 88px + 154px), like the Insights panel. */
+  max-height: calc(100% - 330px);
+  min-height: 220px;
   overflow: auto;
   padding: 14px 16px;
+  transition: max-height 0.38s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 #report h2,
@@ -794,6 +797,12 @@ body.momentum-open #tools {
   body.momentum-open #insights {
     max-height: calc(100% - 400px);
   }
+  #report {
+    max-height: calc(100% - 170px);
+  }
+  body.momentum-open #report {
+    max-height: calc(100% - 400px);
+  }
   #toggles button,
   #views button {
     padding: 6px 8px;
@@ -1262,7 +1271,8 @@ body.momentum-open #focusCard {
   bottom: 340px;
 }
 
-body.momentum-open #insights {
+body.momentum-open #insights,
+body.momentum-open #report {
   max-height: calc(100% - 560px);
   min-height: 0;
 }
@@ -1273,6 +1283,7 @@ body.momentum-open #insights {
   #banner,
   #focusCard,
   #insights,
+  #report,
   #tools {
     transition: none;
   }
