@@ -1,0 +1,13 @@
+{
+  "name": "pitchlens-demo",
+  "private": true,
+  "type": "module",
+  "description": "Scripted screenshots and demo video of the PitchLens studio (synthetic match only).",
+  "scripts": {
+    "screenshots": "node screenshots.mjs",
+    "video": "node video.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.48.2"
+  }
+}

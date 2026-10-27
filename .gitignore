@@ -30,3 +30,6 @@ Thumbs.db
 api/local.settings.json
 api/.python_packages/
 .azurite/
+
+# Scripted demo output
+scripts/demo/out/

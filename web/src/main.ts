@@ -881,7 +881,8 @@ async function main() {
 
   try {
     const match = await loadMatch(ds, (f) => ($("#loadBar").style.width = `${f * 100}%`));
-    new App(match, ds);
+    // Exposed for scripted demos (scripts/demo): screenshots and the demo video.
+    (window as unknown as { pitchlens: App }).pitchlens = new App(match, ds);
     $("#loading").classList.add("done");
   } catch (err) {
     $("#loadText").textContent = `Could not load the match: ${(err as Error).message}`;

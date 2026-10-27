@@ -1,63 +1,145 @@
-# PitchLens: Inside the Game
+# PitchLens Studio
 
-Broadcast telestration studio for football pundits, built for the Microsoft x
-Premier League **Inside the Game** hackathon (challenge: *The Synthetic Match
-Insights Engine for Premier League Studio*).
+**Telestration and explainable match intelligence for TV pundits and fans.**
+Built for the Microsoft x Premier League **Inside the Game** hackathon
+(challenge: *The Synthetic Match Insights Engine for Premier League Studio*).
 
-> Work in progress. The demo runs on **synthetic data only**: fictional teams
-> and players, no real clubs, crests or names.
+**Live demo:** _link added after deployment_ · **Video:** _link added after upload_
 
-## What it does
+> Everything shown runs on **synthetic, football-realistic data** that we generate
+> ourselves: fictional teams (Northbridge Rovers vs Kestrel Bay Athletic), fictional
+> players, no real clubs, crests, names or footage.
 
-- **Telestration studio**: TV, tactical and 3D views; click players for rings, trails and
-  speed/distance cards; formation lines, offside line, distances; arrows, circles and zones
-  that stay on the grass in every view.
-- **AI analyst (four agents on Microsoft Foundry)**: *Explain this moment* and *Recap so far*.
-  The Analyst calls fact tools, the Explainer says why it matters citing fact ids, the
-  Verifier checks every number, time and name in code and the logic with the model (one
-  revision, then unsupported sentences are dropped), the Personalizer adapts it for an
-  analyst or a fan, a favourite club and player, in English, Polish or Spanish.
-  Every answer lists its evidence and the trace of how it was produced.
-- **Control vs chaos**: a momentum strip above the timeline (control index from possession,
-  territory and chance quality) and a `get_momentum` tool the agents use to explain swings.
-- **Live feed**: cards while the match plays: goals, saves, offsides, long through balls with
-  a pass difficulty rating, sprint alerts above 30 km/h, distance milestones, momentum swings.
-- **Player focus**: the camera follows one player, with a live stat card and a feed of their moments.
+![Broadcast view with tracked players](docs/img/tv-tracking.png)
+
+## The problem
+
+A studio pundit has seconds to explain a moment: who was offside and by how much,
+why the back line was caught, who controlled the build-up. Today that means
+switching between stats tools and a telestrator, and the explanation reaches every
+viewer the same way, whether they are a data-hungry analyst or a casual fan.
+
+## What PitchLens does
+
+It follows the challenge's pipeline end to end: **ingest** synthetic events as the
+match plays, **interpret** them into statistics, **explain** why a moment matters,
+**render** it on screen next to the match, and **personalize** it per viewer.
+
+| | |
+|---|---|
+| ![Offside line](docs/img/offside.png) | ![Tactical view with team shapes and drawings](docs/img/tactical-shapes.png) |
+| **Telestration studio.** TV, tactical and 3D views with smooth transitions. Click players for rings, trails and speed/distance cards; formation lines, offside line, distances; arrows, circles and zones stay on the grass in every view. | **Tactics at a glance.** Both teams' shapes, the pundit's own drawings, and a minimap of what the camera shows. |
+| ![Player focus and live feed](docs/img/focus-feed.png) | ![AI analyst with evidence and agent trace](docs/img/ai-analyst.png) |
+| **Live feed and player focus.** Cards while the match plays: goals, saves, offsides, through balls with a 1-5 pass difficulty rating, sprint alerts above 30 km/h, distance milestones, momentum swings. Player focus makes the camera follow one player with a live stat card. | **AI analyst.** *Explain this moment* and *Recap so far*, answered by four agents on Microsoft Foundry, with the evidence behind every sentence and the trace of how it was produced. |
+| ![Same moment for a Polish fan](docs/img/ai-fan-pl.png) | ![Match recap](docs/img/ai-recap.png) |
+| **Personalized.** The same verified facts for an analyst or a fan, a favourite club and player, in English, Polish or Spanish. | **Recaps and control vs chaos.** A momentum strip above the timeline shows who controlled each spell (possession, territory, chance quality); the agents use the same tool to explain swings. |
+
+## How the AI analyst works
+
+Four specialised agents share one session state, a store of numbered facts.
+Deterministic tools compute **every** number; the model never does arithmetic.
+
+```mermaid
+flowchart LR
+    UI["Studio<br/>Explain / Recap"] -->|POST /api/explain| A
+    subgraph Fn["Azure Function (Static Web Apps)"]
+        A["Analyst<br/>calls tools, picks key facts"] --> E["Explainer<br/>why it matters, cites fact ids"]
+        E --> V{"Verifier<br/>code: numbers, times, names<br/>model: logic"}
+        V -->|issues, once| E
+        V --> P["Personalizer<br/>analyst/fan, club, player, EN/PL/ES"]
+        T[("Fact tools<br/>events, player stats, team shape,<br/>offside, possession, zones,<br/>momentum, match summary")]
+        A <--> T
+    end
+    A & E & V & P <-->|chat completions,<br/>tool calling, JSON| F["Microsoft Foundry<br/>model deployment"]
+    P --> R["Answer + evidence + agent trace"]
+```
+
+- **Analyst**: calls up to six tools (offside state at the pass, the defending
+  team's shape before a shot, momentum of the build-up, zones the pundit drew...)
+  and selects the 3 to 6 facts that matter. It writes no narrative.
+- **Explainer**: 2 to 4 sentences on *why* the moment matters (3 to 5 for a recap);
+  every sentence cites the ids of its facts.
+- **Verifier**: code checks that every number, clock time and player name appears
+  in the cited facts, then the model checks the logic (wrong team, a tackle called
+  an interception...). Problems go back to the Explainer once; sentences that are
+  still unsupported are dropped.
+- **Personalizer**: rewrites the verified text for the viewer without adding facts,
+  and its output is checked again.
+
+**Reliability.** Each step falls back to fact-backed templates if the model fails,
+so the endpoint always answers. A 38 s budget keeps requests under the Static Web
+Apps limit, answers are cached, and key moments can be precomputed with the real
+model (`api/precompute.py`) for instant, repeatable results. Every request logs the
+agents' status and timing for Application Insights.
+
+**Responsible AI.** The model only receives structured parameters (time, style,
+language, player id), never free text from the public, the deployment uses Azure AI
+Content Safety filters, and every claim on screen is traceable to a computed fact.
+
+## Microsoft technologies
+
+| | |
+|---|---|
+| **Microsoft Foundry** (Azure OpenAI) | model deployment behind the four agents: tool calling and JSON outputs |
+| **Azure Static Web Apps** | public studio and the managed API |
+| **Azure Functions** (Python) | `/api/explain`: the agents, tools and verifier |
+| **Application Insights** | per-request agent trace (status, timing, model calls, tokens) |
+| **GitHub Actions** | tests the agents, builds and deploys on every push |
+
+## Data
+
+Organisers distribute no match data, so we built our own (`pitchlens_synth/`): 22
+players and the ball simulated at 50 Hz and recorded at 10 Hz, formations that
+shift with the ball, walking to sprinting, offside-aware runs, passes (through and
+lofted), shots with xG, saves, tackles, interceptions, offsides, restarts and
+officials. The demo match (seed 20, 10 minutes, 2-2) is reproducible from its seed.
+All sources share one format, documented in [`docs/schema.md`](docs/schema.md).
+
+Our CV pipeline (`pitchlens_cv/`: YOLOv8 detection, ByteTrack tracking, team colours,
+camera calibration) produces the same format from broadcast video. It was tested
+locally on publicly available sample clips
+([roboflow/sports](https://github.com/roboflow/sports)); that footage is never
+published, deployed or shown in the demo.
+
+## Run it locally
+
+```bash
+python api/local_server.py      # AI analyst API on :7071 (standard library only)
+cd web
+npm install
+npm run dev                     # studio on http://localhost:5173
+```
+
+On Windows, `start.bat` starts both. Without model settings the analyst answers
+from its templates; to use the model, copy `api/local.settings.example.json` to
+`api/local.settings.json` and fill in the Foundry endpoint, key and deployment.
+
+Tests (no Azure needed; a scripted model exercises the Verifier's revision loop):
+
+```bash
+cd api
+python -m unittest discover -s tests -v
+```
+
+Deployment to Azure: [`docs/deploy.md`](docs/deploy.md). Screenshots and the demo
+video are scripted in `scripts/demo/`.
+
+**Shortcuts:** Space play/pause · ←/→ 5 s · Shift+←/→ key moments · 1/2 views ·
+V A C Z E tools · O offside · D distances · L live feed · F player focus · ? help.
 
 ## Repository layout
 
 | path | what |
 |---|---|
-| `pitchlens_synth/` | synthetic match generator: 22 players + ball, formations, passes, shots, tackles |
-| `web/` | broadcast UI (Vite + TypeScript + canvas). Demo data lives in `web/public/data/demo/` |
-| `pitchlens_cv/` | CV pipeline: detection + tracking, team colours, pitch homography, export (local video only) |
-| `api/` | Azure Function `/api/explain`: four agents (Analyst, Explainer, Verifier, Personalizer) on Microsoft Foundry, with fact tools and a template fallback |
-| `docs/schema.md` | shared data format (`meta.json`, `frames.jsonl`, `events.json`) |
+| `pitchlens_synth/` | synthetic match generator |
+| `web/` | studio (Vite + TypeScript + canvas 2D, no framework) |
+| `api/` | Azure Function `/api/explain`: agents, tools, verifier, templates, tests |
+| `pitchlens_cv/` | CV pipeline for local video (detection, tracking, calibration, export) |
+| `scripts/demo/` | scripted screenshots and demo video (Playwright) |
+| `docs/` | data format, deployment guide, screenshots |
 
-## Generate a synthetic match
+## Known limitations
 
-```bash
-pip install -r pitchlens_synth/requirements.txt
-python -m pitchlens_synth --seed 20 --duration 600 --hz 10 --out web/public/data/demo
-```
-
-## Run the studio locally
-
-```bash
-python api/local_server.py   # AI analyst API on :7071 (optional, stdlib only)
-cd web
-npm install
-npm run dev        # http://localhost:5173
-```
-
-Deployment to Azure Static Web Apps and Microsoft Foundry: see `docs/deploy.md`.
-
-Controls: click/tap a player to track them (several at once), toggle team shapes,
-offside line and distances in the top bar, draw with the tools on the left
-(arrow, circle, zone, eraser, undo, clear). Space plays/pauses, arrow keys skip 5 s,
-Shift+arrow jumps between key moments, 1/2 switch TV and tactical views.
-
-When `match/out/cv_demo/` exists (built with the CV pipeline, see `docs/schema.md`),
-the dev server also offers **Broadcast video (local)**: the same overlays drawn on
-the original footage through the per-frame homography. That footage is never
-published.
+- The synthetic match models behaviour, not physics: no dribbles or fouls, few corners.
+- Events are replayed from a file in real time; the format is ready for a live stream.
+- Recaps are computed as of whole half-minutes so they can be precomputed.
