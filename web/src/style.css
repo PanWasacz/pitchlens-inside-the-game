@@ -837,3 +837,61 @@ svg {
     width: calc(100% - 24px);
   }
 }
+
+/* ------------------------------------------------------------ player focus */
+
+#focusCard {
+  position: fixed;
+  left: 72px;
+  bottom: 88px;
+  width: 300px;
+  padding: 10px 12px;
+  border-top: 3px solid var(--c, var(--accent));
+}
+
+#focusCard .fh {
+  font: 700 20px var(--display);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+#focusCard .fh .num {
+  color: var(--c, var(--accent));
+}
+
+#focusCard .fh .muted {
+  font-size: 14px;
+  margin-left: auto;
+}
+
+#focusCard .fs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px 10px;
+  margin-top: 6px;
+}
+
+#focusCard .fs b {
+  display: block;
+  font: 700 20px var(--display);
+  font-variant-numeric: tabular-nums;
+}
+
+#focusCard .fs span {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 640px) {
+  #focusCard {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    bottom: 150px;
+  }
+}

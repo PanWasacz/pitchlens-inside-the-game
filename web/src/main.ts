@@ -20,7 +20,7 @@ const $ = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySe
 const $$ = <T extends HTMLElement = HTMLElement>(sel: string) => [...document.querySelectorAll(sel)] as T[];
 
 type View = "main" | "recon" | "top";
-type Toggle = "shapeHome" | "shapeAway" | "offside" | "distances" | "feed";
+type Toggle = "shapeHome" | "shapeAway" | "offside" | "distances" | "feed" | "focus";
 type Audience = "analyst" | "fan";
 
 interface Explanation {
@@ -84,7 +84,7 @@ class App {
   private viewFrom: View = "main";
   private viewStart = -Infinity;
   private selected: number[] = [];
-  private toggles: Record<Toggle, boolean> = { shapeHome: false, shapeAway: false, offside: false, distances: false, feed: true };
+  private toggles: Record<Toggle, boolean> = { shapeHome: false, shapeAway: false, offside: false, distances: false, feed: true, focus: false };
   private tool: Tool = "select";
   private color = DRAW_COLORS[0];
   private drawing = false;
@@ -96,6 +96,10 @@ class App {
   private bannerTimer = 0;
   private scoreSecond = -1;
   private audience: Audience = "analyst";
+  /** Player focus mode: followed player and their running top speed (per 0.5 s). */
+  private focusPlayer = -1;
+  private focusTop: Float32Array | null = null;
+  private focusTick = -1;
   private explaining = 0;
 
   constructor(private readonly match: Match, ds: Dataset) {
@@ -186,8 +190,70 @@ class App {
   }
 
   private toggle(k: Toggle) {
+    if (k === "focus") return this.setFocus(!this.toggles.focus);
     this.toggles[k] = !this.toggles[k];
     $(`[data-toggle="${k}"]`).setAttribute("aria-pressed", String(this.toggles[k]));
+  }
+
+  private setFocus(on: boolean) {
+    const card = $("#focusCard");
+    if (on && !this.selected.length) {
+      card.hidden = false;
+      card.innerHTML = `<p class="muted">Select a player first, then press Player focus (F).</p>`;
+      window.setTimeout(() => {
+        if (!this.toggles.focus) card.hidden = true;
+      }, 2500);
+      return;
+    }
+    this.toggles.focus = on;
+    $('[data-toggle="focus"]').setAttribute("aria-pressed", String(on));
+    this.focusPlayer = on ? this.selected[0] : -1;
+    this.focusTop = null;
+    this.focusTick = -1;
+    if (on) {
+      const top = new Float32Array(Math.ceil(this.match.duration * 2) + 1);
+      let best = 0;
+      for (let i = 0; i < top.length; i++) {
+        const s = this.match.sample(i / 2);
+        if (s.visible[this.focusPlayer]) best = Math.max(best, s.speed[this.focusPlayer]);
+        top[i] = best;
+      }
+      this.focusTop = top;
+    }
+    card.hidden = !on;
+    this.updateFocusCard();
+  }
+
+  /** Live stats of the focused player, refreshed four times a second. */
+  private updateFocusCard() {
+    if (!this.toggles.focus || this.focusPlayer < 0) return;
+    const tick = Math.floor(this.t * 4);
+    if (tick === this.focusTick) return;
+    this.focusTick = tick;
+    const p = this.match.players[this.focusPlayer];
+    const s = this.match.sample(this.t);
+    const mine = this.match.events.filter((e) => e.t <= this.t && e.player === p.id);
+    const passes = mine.filter((e) => e.type === "pass");
+    const done = passes.filter((e) => e.outcome === "complete").length;
+    const shots = mine.filter((e) => e.type === "shot");
+    const goals = shots.filter((e) => e.outcome === "goal").length;
+    const won = mine.filter((e) => (e.type === "tackle" && e.outcome === "won") || e.type === "interception").length;
+    const top = this.focusTop ? this.focusTop[Math.min(this.focusTop.length - 1, Math.floor(this.t * 2))] : 0;
+    const team = this.match.meta.teams[p.team];
+    const stat = (v: string, k: string) => `<div><b>${v}</b><span>${k}</span></div>`;
+    const card = $("#focusCard");
+    card.style.setProperty("--c", team.colors.primary);
+    card.innerHTML =
+      `<div class="fh"><span class="num">${p.number ?? ""}</span>${esc(String(p.name ?? p.label))}` +
+      `<span class="muted">${team.short} · ${esc(String(p.position ?? ""))}</span></div>` +
+      `<div class="fs">` +
+      stat(s.visible[p.index] ? (s.speed[p.index] * 3.6).toFixed(1) : "-", "km/h now") +
+      stat((top * 3.6).toFixed(1), "top km/h") +
+      stat((s.dist[p.index] / 1000).toFixed(2), "km") +
+      stat(passes.length ? `${done}/${passes.length}` : "0", "passes") +
+      stat(`${goals}/${shots.length}`, "goals/shots") +
+      stat(String(won), "ball wins") +
+      `</div>`;
   }
 
   private setTool(t: Tool) {
@@ -502,6 +568,7 @@ class App {
         if (i < 0) this.selected = [];
         else if (this.selected.includes(i)) this.selected = this.selected.filter((j) => j !== i);
         else this.selected = [...this.selected, i];
+        if (this.toggles.focus && !this.selected.includes(this.focusPlayer)) this.setFocus(false);
         return;
       }
       const g = cam.unproject(x, y);
@@ -566,9 +633,11 @@ class App {
       else if (k === "o") this.toggle("offside");
       else if (k === "d") this.toggle("distances");
       else if (k === "l") this.toggle("feed");
+      else if (k === "f") this.toggle("focus");
       else if (k === "delete" || k === "backspace") this.drawings.clear();
       else if (k === "escape") {
         this.selected = [];
+        if (this.toggles.focus) this.setFocus(false);
         $("#help").hidden = true;
       } else if (k === "?" || k === "h") $("#help").hidden = !$("#help").hidden;
       else return;
@@ -607,7 +676,14 @@ class App {
     if (this.playing && !this.snapCamera) {
       const hit = this.match.events.find((g) => (g.type === "goal" || g.type === "offside") && g.t > prevT && g.t <= this.t);
       if (hit) this.showBanner(hit);
-      if (this.toggles.feed) for (const item of this.feed) if (item.t > prevT && item.t <= this.t) this.pushCard(item);
+      if (this.toggles.feed) {
+        const focusId = this.toggles.focus && this.focusPlayer >= 0 ? this.match.players[this.focusPlayer].id : null;
+        for (const item of this.feed) {
+          if (item.t <= prevT || item.t > this.t) continue;
+          if (focusId && item.kind !== "goal" && !item.players.includes(focusId)) continue;
+          this.pushCard(item);
+        }
+      }
     }
     this.render(now, dt);
     this.updateTransport();
@@ -619,6 +695,7 @@ class App {
     $("#progress").style.width = `${f}%`;
     $("#playhead").style.left = `${f}%`;
     $("#clock").textContent = fmtClock(this.t);
+    this.updateFocusCard();
     $("#playIcon").innerHTML = `<path d="${this.playing ? PAUSE_ICON : PLAY_ICON}"/>`;
     if (Math.floor(this.t) !== this.scoreSecond) {
       this.scoreSecond = Math.floor(this.t);
@@ -646,8 +723,14 @@ class App {
       const f = this.focus ?? [w / 2, h / 2];
       this.recon.setFocus(f[0], f[1]);
     } else {
-      const bx = s.ball.visible ? s.ball.x : L / 2;
-      const by = s.ball.visible ? s.ball.y : W / 2;
+      let bx = s.ball.visible ? s.ball.x : L / 2;
+      let by = s.ball.visible ? s.ball.y : W / 2;
+      const fp = this.focusPlayer;
+      if (this.toggles.focus && fp >= 0 && s.visible[fp]) {
+        // Follow the focused player but keep the ball in the picture.
+        bx = 0.65 * s.x[fp] + 0.35 * bx;
+        by = 0.65 * s.y[fp] + 0.35 * by;
+      }
       this.tv.follow(bx, by, dt, this.snapCamera);
       this.tv.update(w, h);
     }

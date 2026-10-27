@@ -31,6 +31,7 @@
         <button data-toggle="offside" aria-pressed="false">Offside</button>
         <button data-toggle="distances" aria-pressed="false">Distances</button>
         <button data-toggle="feed" aria-pressed="true" title="Live insight cards while the match plays (L)">Live feed</button>
+        <button data-toggle="focus" aria-pressed="false" title="Follow the selected player (F)">Player focus</button>
       </div>
       <div class="panel group">
         <select id="dataset" aria-label="Match source"></select>
@@ -106,6 +107,7 @@
         <dt>Del</dt><dd>Clear drawings</dd>
         <dt>O / D</dt><dd>Offside line / distances</dd>
         <dt>L</dt><dd>Live insight feed</dd>
+        <dt>F</dt><dd>Player focus (selected player)</dd>
         <dt>Esc</dt><dd>Deselect players</dd>
         <dt>Wheel / pinch</dt><dd>Zoom the TV camera</dd>
       </dl>
@@ -142,6 +144,7 @@
     </footer>
 
     <div id="feed" aria-live="polite"></div>
+    <div id="focusCard" class="panel" hidden></div>
     <div id="banner" aria-live="polite"></div>
     <div id="loading">
       <div class="logo">PITCHLENS <span>STUDIO</span></div>
