@@ -517,6 +517,15 @@ body.momentum-open #tools {
   color: var(--muted);
 }
 
+.report-figure {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 6px 0 10px;
+  background: #fff;
+}
+
 #momentumBtn {
   font: 700 13px var(--display);
   letter-spacing: 0.06em;

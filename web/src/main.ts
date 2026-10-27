@@ -268,8 +268,11 @@ class App {
     };
     $("#reportBtn").onclick = () => this.toggleReport();
     $("#reportClose").onclick = () => this.toggleReport(false);
-    $("#reportDownload").onclick = () => {
-      window.location.href = `/api/report.pdf?dataset=${encodeURIComponent(this.datasetKey)}`;
+    $("#reportDownload").onclick = async () => {
+      // The PDF is the LaTeX report compiled at build time (scripts/build_reports.py).
+      if (!this.reportFiles) await this.findReportFiles();
+      if (this.reportFiles?.pdf) window.location.href = `${this.reportFiles.base}report.pdf`;
+      else $("#reportOut").insertAdjacentHTML("afterbegin", `<p class="report-callout">The PDF report is built during deployment and is not available here.</p>`);
     };
     $("#explain").onclick = () => this.explain("moment");
     $("#recap").onclick = () => this.explain("recap");
@@ -301,9 +304,27 @@ class App {
     if (open && !panel.dataset.loaded) void this.loadReport();
   }
 
+  /** Figures and documents built by scripts/build_reports.py, if this deployment has them. */
+  private reportFiles: { base: string; pdf: boolean } | null = null;
+
+  private async findReportFiles() {
+    const base = `reports/${encodeURIComponent(this.datasetKey)}/`;
+    const ok = async (file: string) => {
+      try {
+        const r = await fetch(base + file, { method: "HEAD" });
+        return r.ok && !(r.headers.get("content-type") ?? "").includes("text/html");
+      } catch {
+        return false;
+      }
+    };
+    const [figures, pdf] = await Promise.all([ok("map_shots.png"), ok("report.pdf")]);
+    this.reportFiles = figures ? { base, pdf } : null;
+  }
+
   private async loadReport() {
     const out = $("#reportOut");
     try {
+      await this.findReportFiles();
       const response = await fetch(`/api/report?dataset=${encodeURIComponent(this.datasetKey)}`);
       const report = (await response.json()) as MatchReport;
       if (!response.ok || report.status !== "ok") throw new Error("Report is unavailable.");
@@ -359,15 +380,32 @@ class App {
       `<h3>${esc(home.name)} ${esc(report.match.score)} ${esc(away.name)}</h3>` +
       `<p class="muted">${esc(home.formation)} · ${esc(away.formation)} · ${esc(report.match.duration)}</p>` +
       `<h3>Team statistics</h3><table class="report-table"><thead><tr><th></th><th>${esc(home.short)}</th><th>${esc(away.short)}</th></tr></thead><tbody>${stats}</tbody></table>` +
-      `<h3>Momentum</h3>${momentumChart}` +
+      `<h3>Momentum</h3>${this.figure("momentum.png", "Momentum chart", momentumChart)}` +
       (momentum.biggest_swing ? `<p class="report-callout">Biggest swing: ${esc(momentum.biggest_swing.towards)} at ${esc(momentum.biggest_swing.at)} (+${momentum.biggest_swing.control_change})</p>` : "") +
       `<h3>Top players</h3><table class="report-table"><thead><tr><th>Player</th><th>Team</th><th>G</th><th>S</th><th>Dist.</th><th>Top km/h</th></tr></thead><tbody>${players}</tbody></table>` +
       `<h3>Key moments</h3><div class="report-moments">${moments || `<p class="muted">No key moments.</p>`}</div>` +
-      `<h3>Shot map</h3>${shotMap}<h3>Average positions</h3>${formationMap}<h3>Position heat map</h3>${heatMap}` +
+      `<h3>Shot map</h3>${this.figure("map_shots.png", "Shot map", shotMap)}` +
+      `<h3>Average positions</h3>${
+        this.reportFiles
+          ? this.figure("map_formation_home.png", `${home.name} average positions`, "") +
+            this.figure("map_formation_away.png", `${away.name} average positions`, "")
+          : formationMap
+      }` +
+      `<h3>Position heat map</h3>${
+        this.reportFiles
+          ? this.figure("map_heat_home.png", `${home.name} heat map`, "") + this.figure("map_heat_away.png", `${away.name} heat map`, "")
+          : heatMap
+      }` +
       `<p class="muted">Most distance: ${esc(report.most_distance.player)} (${esc(report.most_distance.team)}), ${report.most_distance.distance_km} km</p>`;
     for (const button of $$<HTMLButtonElement>(".report-moment")) {
       button.onclick = () => this.seek(Number(button.dataset.time) - 5);
     }
+  }
+
+  /** Pre-rendered report figure when available, otherwise the inline SVG fallback. */
+  private figure(file: string, alt: string, fallback: string): string {
+    if (!this.reportFiles) return fallback;
+    return `<img class="report-figure" src="${this.reportFiles.base}${file}" alt="${esc(alt)}" loading="lazy">`;
   }
 
   private setView(v: View) {
