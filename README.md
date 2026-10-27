@@ -4,7 +4,7 @@
 Built for the Microsoft x Premier League **Inside the Game** hackathon
 (challenge: *The Synthetic Match Insights Engine for Premier League Studio*).
 
-**Live demo:** _link added after deployment_ · **Video:** _link added after upload_
+**Live demo:** [pitchlens-studio-5169.azurewebsites.net](https://pitchlens-studio-5169.azurewebsites.net) · **Video:** _link added after upload_
 
 > Everything shown runs on **synthetic, football-realistic data** that we generate
 > ourselves: fictional teams (Northbridge Rovers vs Kestrel Bay Athletic), fictional

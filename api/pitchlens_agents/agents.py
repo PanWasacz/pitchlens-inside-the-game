@@ -534,7 +534,10 @@ def explain(req: dict, m: Match | None = None, llm: LLM | None = None, use_preco
         "cached": False,
         "precomputed": False,
     }
-    _cache[key] = result
-    if len(_cache) > CACHE_SIZE:
-        _cache.popitem(last=False)
+    # Do not keep answers damaged by a transient model error (e.g. a rate limit): the next
+    # viewer should get a fresh attempt, not the degraded copy.
+    if not (llm.available and any(s["status"] == "error" for s in trace.steps)):
+        _cache[key] = result
+        if len(_cache) > CACHE_SIZE:
+            _cache.popitem(last=False)
     return result
