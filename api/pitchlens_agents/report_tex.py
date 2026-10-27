@@ -22,7 +22,7 @@ PREAMBLE = r"""\UseRawInputEncoding
 \documentclass[12pt, a4paper]{article}
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage[polish]{babel}
+\usepackage[english]{babel}
 \usepackage[a4paper, left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm]{geometry}
 \usepackage{graphicx,subcaption}
 \usepackage{float}
@@ -79,7 +79,7 @@ def render_tex(report: dict, figures: dict[str, str] | None = None, generated: s
     hs, as_ = _tex(home["short"]), _tex(away["short"])
     lines = [
         PREAMBLE,
-        rf"\title{{MATCH RAPORT {_tex(home['name'])} vs {_tex(away['name'])}}}",
+        rf"\title{{Match report: {_tex(home['name'])} vs {_tex(away['name'])}}}",
         r"\author{PitchLens - The Boys AGH platform }",
         rf"\date{{{_tex(generated or date.today().isoformat())}}}",
         "",
