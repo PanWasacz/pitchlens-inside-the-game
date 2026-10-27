@@ -340,7 +340,7 @@ export interface Dataset {
 }
 
 export const DATASETS: Dataset[] = [
-  { key: "demo", label: "Synthetic match", base: "data/demo/" },
+  { key: "demo", label: "Northbridge Rovers - Kestrel Bay Athletic", base: "data/demo/" },
   { key: "possession-battle", label: "Harbour City FC - Redwood Athletic", base: "data/scenarios/scenario-01-possession-battle/" },
   { key: "offside-attack", label: "Silverlake United - Eastgate Borough", base: "data/scenarios/scenario-02-offside-attack/" },
   { key: "transition-attack", label: "Pinecrest Wanderers - Golden Vale SC", base: "data/scenarios/scenario-03-transition-attack/" },
