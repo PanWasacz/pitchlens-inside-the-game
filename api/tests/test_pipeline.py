@@ -111,6 +111,25 @@ class Recap(unittest.TestCase):
                     self.assertNotIn("dropped", [s["status"] for s in r["trace"]])
 
 
+class Precomputed(unittest.TestCase):
+    def test_serves_precomputed_answer_and_snaps_recaps(self):
+        req = {"task": "recap", "t": 437.0, "mode": "fan", "lang": "pl", "team": None, "player": None, "zones": []}
+        moment = agents.recap_moment(M, 420.0)
+        key = agents.moment_key(req, moment)
+        self.assertEqual(key, "recap|420|fan|pl|-")
+        saved = agents._precomputed
+        agents._precomputed = {key: {"status": "ok", "text": "from the model", "cached": False}}
+        try:
+            r = agents.explain(req, M, LLM())
+            self.assertTrue(r["precomputed"])
+            self.assertEqual(r["text"], "from the model")
+            # A favourite player always runs live.
+            r = agents.explain({**req, "player": "H09"}, M, LLM())
+            self.assertFalse(r.get("precomputed"))
+        finally:
+            agents._precomputed = saved
+
+
 class ScriptedLLM(LLM):
     """Plays the four agents; the first Explainer draft contains a wrong number."""
 

@@ -13,12 +13,13 @@ from collections import OrderedDict
 
 from . import fallback
 from .llm import LLM, Budget, LLMError
-from .match import Match, clock, demo_match
+from .match import DATA_DIR, Match, clock, demo_match
 from .tools import TOOL_SCHEMAS, Fact, FactStore, match_context, player_index, run_tool, top_player
 from .verify import Evidence, check_sentences, check_text
 
 MAX_TOOL_CALLS = 6
-ANALYST_ROUNDS = 3
+ANALYST_ROUNDS = 2
+RECAP_STEP_S = 30  # recaps are computed as of whole half-minutes, so they can be precomputed
 REQUEST_BUDGET_S = 38.0
 LANGS = {"en": "English", "pl": "Polish", "es": "Spanish"}
 
@@ -148,7 +149,8 @@ class Trace:
 ANALYST_SYSTEM = """You are the Analyst agent of PitchLens, a football TV studio tool.
 Find out WHAT happened in one key moment of a synthetic match, using the tools.
 - Tools compute all numbers. Never compute or guess numbers yourself.
-- Make at most {max_calls} tool calls in total; call several in one turn when you can.
+- Make at most {max_calls} tool calls in total, ALL in your first turn (parallel tool calls);
+  then answer. Ask for more only if a result was an error.
 - Useful choices: get_offside_state at the pass time for offsides; get_team_shape of the
   defending team just before a shot; get_player_stats for the main player; get_momentum
   for who controlled the build-up (control vs chaos); get_possession for open play;
@@ -345,19 +347,46 @@ def _cache_key(req: dict) -> str:
     return hashlib.sha1(json.dumps(req, sort_keys=True).encode()).hexdigest()
 
 
-def explain(req: dict, m: Match | None = None, llm: LLM | None = None) -> dict:
-    """req: {t, event_id?, mode: analyst|fan, team: home|away|None, player: id|None, lang, zones}"""
+def moment_key(req: dict, moment: dict) -> str | None:
+    """Stable key of a request for precomputed answers (none for zones / favourite player)."""
+    if req.get("zones") or req.get("player"):
+        return None
+    where = moment["event_id"] if moment["event_id"] is not None else round(moment["t"])
+    return f"{req.get('task', 'moment')}|{where}|{req['mode']}|{req['lang']}|{req.get('team') or '-'}"
+
+
+_precomputed: dict | None = None
+
+
+def precomputed() -> dict:
+    """Answers generated ahead of time with the real model (api/precompute.py)."""
+    global _precomputed
+    if _precomputed is None:
+        path = DATA_DIR / "precomputed.json"
+        _precomputed = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return _precomputed
+
+
+def explain(req: dict, m: Match | None = None, llm: LLM | None = None, use_precomputed: bool = True) -> dict:
+    """req: {task, t, event_id?, mode: analyst|fan, team: home|away|None, player: id|None, lang, zones}"""
     m = m or demo_match()
     llm = llm or LLM()
-    key = _cache_key({**req, "llm": llm.available})
+    recap = req.get("task") == "recap"
+    t = req["t"]
+    if recap and t >= RECAP_STEP_S:
+        t = (t // RECAP_STEP_S) * RECAP_STEP_S
+    moment = recap_moment(m, t) if recap else resolve_moment(m, t, req.get("event_id"))
+    mkey = moment_key(req, moment)
+    if use_precomputed and mkey and mkey in precomputed():
+        return {**precomputed()[mkey], "cached": True, "precomputed": True}
+    key = mkey or _cache_key(req)
+    key = f"{key}|{llm.available}"
     if key in _cache:
         _cache.move_to_end(key)
         return {**_cache[key], "cached": True}
 
     budget = Budget(REQUEST_BUDGET_S)
     trace = Trace()
-    recap = req.get("task") == "recap"
-    moment = recap_moment(m, req["t"]) if recap else resolve_moment(m, req["t"], req.get("event_id"))
     audience = {"mode": req["mode"], "lang": req["lang"], "team_short": m.short(req.get("team"))}
     store = FactStore()
     ctx_data, ctx_label = match_context(m, moment["analysis_t"])
@@ -484,6 +513,7 @@ def explain(req: dict, m: Match | None = None, llm: LLM | None = None) -> dict:
         "trace": trace.steps,
         "usage": {"model_calls": llm.calls, "tokens": llm.tokens},
         "cached": False,
+        "precomputed": False,
     }
     _cache[key] = result
     if len(_cache) > CACHE_SIZE:

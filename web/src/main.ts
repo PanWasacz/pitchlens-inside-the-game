@@ -33,6 +33,7 @@ interface Explanation {
   evidence: { id: string; label: string; tool: string; t: number | null }[];
   trace: { agent: string; status: string; summary: string; details: string[]; ms: number }[];
   cached: boolean;
+  precomputed?: boolean;
   message?: string;
 }
 
@@ -495,7 +496,7 @@ class App {
       `<p class="ai-text"></p>` +
       `<h3>Evidence</h3><div class="ai-evidence"></div>` +
       `<details class="ai-trace"><summary>How this was produced</summary><ol>${steps}</ol>` +
-      `<p class="muted">${esc(engine)}${d.cached ? " · cached" : ""}</p></details>`;
+      `<p class="muted">${esc(engine)}${d.precomputed ? " · precomputed" : d.cached ? " · cached" : ""}</p></details>`;
     $(".ai-text").textContent = d.text;
     const list = $(".ai-evidence");
     for (const ev of d.evidence) {
