@@ -4,7 +4,7 @@
 Built for the Microsoft x Premier League **Inside the Game** hackathon
 (challenge: *The Synthetic Match Insights Engine for Premier League Studio*).
 
-**Live demo:** [pitchlens-studio-5169.azurewebsites.net](https://pitchlens-studio-5169.azurewebsites.net) · **Video:** [youtu.be/P8NhUwjZ3bE](https://youtu.be/P8NhUwjZ3bE) · **Sample report:** [PDF](https://pitchlens-studio-5169.azurewebsites.net/reports/demo/report.pdf)
+**Live demo:** [pitchlens-studio-5169.azurewebsites.net](https://pitchlens-studio-5169.azurewebsites.net) · **Video:** [youtu.be/8_mxBKjnpG0](https://youtu.be/8_mxBKjnpG0) · **Sample report:** [PDF](https://pitchlens-studio-5169.azurewebsites.net/reports/demo/report.pdf)
 
 > Everything shown runs on **synthetic, football-realistic data** that we generate
 > ourselves: fictional teams, fictional players, no real clubs, crests, names or footage.
