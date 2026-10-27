@@ -9,6 +9,12 @@ for anything else (favourite player, drawn zones, other times).
     # model settings in the environment or api/local.settings.json
     python api/precompute.py                 # neutral viewer
     python api/precompute.py --teams         # also NBR fan / KBA fan variants
+
+    # or let the deployed site run the agents (no keys on this machine)
+    python api/precompute.py --url https://<app>.azurewebsites.net
+
+Runs are idempotent: answers already in the file are kept, so a run interrupted by
+rate limits can simply be repeated.
 """
 
 from __future__ import annotations
@@ -16,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -49,12 +56,18 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--teams", action="store_true", help="also precompute favourite-team variants")
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--url", help="deployed PitchLens site that runs the agents instead of this machine")
+    ap.add_argument("--recap-every", type=int, default=RECAP_STEP_S, help="seconds between precomputed recaps")
     args = ap.parse_args()
     load_settings()
-    if not LLM().available:
-        sys.exit("Model settings missing: set AZURE_OPENAI_* or fill api/local.settings.json")
+    if not args.url and not LLM().available:
+        sys.exit("Model settings missing: set AZURE_OPENAI_* or fill api/local.settings.json, or pass --url")
     m = demo_match()
-    reqs = requests(args.teams)
+    reqs = [r for r in requests(args.teams) if r["task"] != "recap" or r["t"] % args.recap_every == 0]
+    # The demo video's personalisation: the 03:32 offside for an away fan in PL and ES.
+    offside = next(e["t"] for e in m.key_moments() if e["type"] == "offside")
+    for lang in ("pl", "es"):
+        reqs.append({"task": "moment", "t": offside, "event_id": None, "mode": "fan", "lang": lang, "team": "away", "player": None, "zones": []})
     print(f"{len(reqs)} answers to generate with {args.workers} workers...")
     path = DATA_DIR / "precomputed.json"
     done: dict = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -65,6 +78,16 @@ def main() -> None:
         key = moment_key(req, moment)
         if key in done:
             return key, None
+        if args.url:
+            body = json.dumps({k: req[k] for k in ("task", "t", "mode", "lang", "team")}).encode()
+            http = urllib.request.Request(args.url.rstrip("/") + "/api/explain", data=body, headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(http, timeout=90) as resp:
+                    res = json.loads(resp.read().decode("utf-8"))
+            except OSError as e:
+                print(f"  {key}: {e}")
+                return key, {"engine": "error", "trace": []}
+            return key, None if res.get("precomputed") else res
         return key, explain(req, m, LLM(), use_precomputed=False)
 
     with ThreadPoolExecutor(args.workers) as pool:
@@ -73,8 +96,8 @@ def main() -> None:
             if res is None:
                 continue
             # Keep only real model answers; template fallbacks are produced live anyway.
-            if res["engine"] == "foundry" and not any(s["status"] == "fallback" for s in res["trace"]):
-                done[key] = {**res, "cached": False}
+            if res.get("engine") == "foundry" and not any(s["status"] in ("fallback", "error") for s in res["trace"]):
+                done[key] = {**res, "cached": False, "precomputed": False}
             else:
                 failed += 1
             if i % 10 == 0:

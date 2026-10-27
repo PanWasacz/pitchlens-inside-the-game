@@ -111,6 +111,20 @@ class Recap(unittest.TestCase):
                     self.assertNotIn("dropped", [s["status"] for s in r["trace"]])
 
 
+class SentenceParsing(unittest.TestCase):
+    def test_inline_and_string_citations(self):
+        cases = [
+            ({"text": "KBA held a high line (f4, f6).", "facts": []}, "KBA held a high line.", ["f4", "f6"]),
+            ({"text": "Offside by 0.8 m [f3]", "facts": "f3, f5"}, "Offside by 0.8 m", ["f3", "f5"]),
+            ({"text": "Plain sentence.", "facts": ["f2"]}, "Plain sentence.", ["f2"]),
+            ({"text": "Tied 1-1 (f1, f5 and f3).", "fact_ids": ["f1"]}, "Tied 1-1.", ["f1", "f5", "f3"]),
+        ]
+        for raw, text, ids in cases:
+            out = agents.parse_sentence(raw)
+            self.assertEqual(out["text"], text)
+            self.assertEqual(out["facts"], ids)
+
+
 class Precomputed(unittest.TestCase):
     def test_serves_precomputed_answer_and_snaps_recaps(self):
         req = {"task": "recap", "t": 437.0, "mode": "fan", "lang": "pl", "team": None, "player": None, "zones": []}

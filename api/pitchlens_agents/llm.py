@@ -94,6 +94,10 @@ class LLM:
                     self.reasoning = True
                     _REASONING.add(self.deployment)
                     continue
+                if e.code == 429 and attempt == 0:
+                    # Rate limited (tokens per minute): wait as asked, briefly, then retry once.
+                    time.sleep(min(6.0, float(e.headers.get("retry-after") or 2)))
+                    continue
                 raise LLMError(f"model returned HTTP {e.code}: {detail}") from e
             except (urllib.error.URLError, TimeoutError, OSError) as e:
                 raise LLMError(f"model unreachable: {e}") from e

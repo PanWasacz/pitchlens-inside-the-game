@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections import OrderedDict
 
@@ -172,6 +173,7 @@ Rules:
   round numbers, but keep the units given (m, km, km/h, %). Do not convert units.
 - Use team short names (e.g. NBR, KBA) and player names exactly as in the facts.
 - No invented details: no weather, crowd, injuries or events not in the facts.
+- Put the fact ids ONLY in the "facts" list, never in the sentence text.
 Reply with JSON only: {"sentences": [{"text": "...", "facts": ["f2", "f4"]}]}"""
 
 VERIFIER_SYSTEM = """You are the Verifier agent of PitchLens. Numbers and names were already checked by code.
@@ -277,6 +279,24 @@ def _parse_or_none(text: str | None) -> dict | None:
         return None
 
 
+FACT_ID = re.compile(r"\bf\d+\b")
+INLINE_CITE = re.compile(r"\s*[\(\[]\s*f\d+(?:(?:\s*[,;&]\s*|\s+)(?:and\s+)?f\d+)*\s*[\)\]]")
+
+
+def parse_sentence(s: dict) -> dict:
+    """Normalise one Explainer sentence. Models sometimes write the citations into the
+    text ("... (f4, f6).") or as one string ("f4, f6"); collect the ids from both."""
+    text = str(s.get("text", "")).strip()
+    raw = s.get("facts") or s.get("fact_ids") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    ids: list[str] = []
+    for item in [*map(str, raw), *INLINE_CITE.findall(text)]:
+        ids += [f for f in FACT_ID.findall(item) if f not in ids]
+    text = INLINE_CITE.sub("", text).strip()
+    return {"text": text, "facts": ids}
+
+
 def explainer(llm: LLM, budget: Budget, moment_info: dict, facts: list[Fact], problems: list[dict] | None, draft: list[dict] | None) -> list[dict]:
     user = {"moment": moment_info, "facts": json.loads(_facts_json(facts))}
     if problems:
@@ -289,11 +309,7 @@ def explainer(llm: LLM, budget: Budget, moment_info: dict, facts: list[Fact], pr
         max_tokens=450,
         timeout=min(20.0, max(5.0, budget.left - 10)),
     )
-    sentences = [
-        {"text": str(s.get("text", "")).strip(), "facts": [str(f) for f in s.get("facts", [])]}
-        for s in out.get("sentences", [])
-        if isinstance(s, dict) and s.get("text")
-    ]
+    sentences = [parse_sentence(s) for s in out.get("sentences", []) if isinstance(s, dict) and s.get("text")]
     if not sentences:
         raise LLMError("Explainer returned no sentences")
     return sentences[: 5 if moment_info.get("type") == "recap" else 4]
