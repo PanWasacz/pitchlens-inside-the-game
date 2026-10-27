@@ -58,6 +58,16 @@ template explanations built from the same tools and checks (`engine: "fallback"`
 Keys exist only in Azure settings and in the git-ignored `api/local.settings.json`.
 Set a budget alert on the subscription: the endpoint is public.
 
+## Monitoring (optional)
+
+Static Web App → **Settings → Application Insights** → enable. Each request logs one
+line `pitchlens.explain {...}` with the moment type, engine, model calls, tokens and
+per-agent status and duration:
+
+```kusto
+traces | where message startswith "pitchlens.explain" | order by timestamp desc
+```
+
 ## 3. Check the deployment
 
 ```bash

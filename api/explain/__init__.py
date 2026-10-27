@@ -24,6 +24,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     except Exception:  # never leak internals, but keep them in the logs
         logging.exception("explain failed")
         return _json({"status": "error", "message": "The analyst is unavailable right now."}, 500)
+    # One structured line per request; with Application Insights enabled this is
+    # queryable (traces | where message startswith "pitchlens.explain").
+    logging.info("pitchlens.explain %s", json.dumps({
+        "moment": result["moment"]["type"],
+        "engine": result["engine"],
+        "model": result["model"],
+        "cached": result["cached"],
+        "model_calls": result["usage"]["model_calls"],
+        "tokens": result["usage"]["tokens"],
+        "agents": [{"agent": s["agent"], "status": s["status"], "ms": s["ms"]} for s in result["trace"]],
+    }))
     return _json(result, 200)
 
 

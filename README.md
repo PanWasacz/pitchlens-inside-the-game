@@ -7,6 +7,23 @@ Insights Engine for Premier League Studio*).
 > Work in progress. The demo runs on **synthetic data only**: fictional teams
 > and players, no real clubs, crests or names.
 
+## What it does
+
+- **Telestration studio**: TV, tactical and 3D views; click players for rings, trails and
+  speed/distance cards; formation lines, offside line, distances; arrows, circles and zones
+  that stay on the grass in every view.
+- **AI analyst (four agents on Microsoft Foundry)**: *Explain this moment* and *Recap so far*.
+  The Analyst calls fact tools, the Explainer says why it matters citing fact ids, the
+  Verifier checks every number, time and name in code and the logic with the model (one
+  revision, then unsupported sentences are dropped), the Personalizer adapts it for an
+  analyst or a fan, a favourite club and player, in English, Polish or Spanish.
+  Every answer lists its evidence and the trace of how it was produced.
+- **Control vs chaos**: a momentum strip above the timeline (control index from possession,
+  territory and chance quality) and a `get_momentum` tool the agents use to explain swings.
+- **Live feed**: cards while the match plays: goals, saves, offsides, long through balls with
+  a pass difficulty rating, sprint alerts above 30 km/h, distance milestones, momentum swings.
+- **Player focus**: the camera follows one player, with a live stat card and a feed of their moments.
+
 ## Repository layout
 
 | path | what |
